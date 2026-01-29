@@ -1,0 +1,2192 @@
+<!DOCTYPE html><html lang="en"><head><meta name="x-poe-datastore-behavior" content="local_only"><meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://code.jquery.com https://unpkg.com https://d3js.org https://threejs.org https://cdn.plot.ly https://stackpath.bootstrapcdn.com https://maps.googleapis.com https://cdn.tailwindcss.com https://ajax.googleapis.com https://kit.fontawesome.com https://cdn.datatables.net https://maxcdn.bootstrapcdn.com https://code.highcharts.com https://tako-static-assets-production.s3.amazonaws.com https://www.youtube.com https://fonts.googleapis.com https://fonts.gstatic.com https://pfst.cf2.poecdn.net https://puc.poecdn.net https://i.imgur.com https://wikimedia.org https://*.icons8.com https://*.giphy.com https://picsum.photos https://images.unsplash.com; frame-src 'self' https://www.youtube.com https://trytako.com; child-src 'self'; manifest-src 'self'; worker-src 'self'; upgrade-insecure-requests; block-all-mixed-content;">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<title>Starland TD - Competitive Tower Defense</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--cyan:#0ff;--blue:#0af;--red:#f55;--gold:#fd0;--panel:rgba(0,12,24,.92)}
+html,body{width:100%;height:100%;overflow:hidden;background:#000}
+body{font-family:'Segoe UI',system-ui,sans-serif;color:#fff}
+#gameCanvas{position:absolute;top:0;left:0;width:100%;height:100%;display:block}
+
+/* Top HUD - minimal, doesn't block gameplay */
+#topHUD{position:fixed;top:0;left:0;right:0;height:48px;background:linear-gradient(180deg,rgba(0,0,0,.85) 0%,rgba(0,0,0,0) 100%);display:flex;justify-content:space-between;align-items:flex-start;padding:8px 16px;pointer-events:none;z-index:10}
+.hud-panel{background:var(--panel);border:1px solid rgba(0,255,255,.4);border-radius:6px;padding:6px 14px;pointer-events:auto;display:flex;gap:16px;align-items:center}
+.hud-panel.blue{border-color:var(--blue);box-shadow:0 0 12px rgba(0,170,255,.25)}
+.hud-panel.red{border-color:var(--red);box-shadow:0 0 12px rgba(255,85,85,.25)}
+.hud-stat{display:flex;align-items:center;gap:6px;font-size:13px}
+.hud-stat .icon{font-size:14px}
+.hud-stat .val{font-weight:700;min-width:32px}
+.hud-panel.blue .val{color:var(--blue)}
+.hud-panel.red .val{color:var(--red)}
+#centerHUD{text-align:center}
+#phaseText{font-size:15px;font-weight:700;color:#ff6;text-shadow:0 0 8px rgba(255,255,0,.4)}
+#waveText{font-size:12px;color:#aaa}
+#timerText{font-size:20px;font-weight:700;color:#fff;margin-top:2px}
+#modeText{font-size:10px;color:#6ad;margin-top:2px}
+
+/* Bottom toolbar - compact */
+#bottomBar{position:fixed;bottom:0;left:0;right:0;height:72px;background:linear-gradient(0deg,rgba(0,0,0,.9) 0%,rgba(0,0,0,0) 100%);display:flex;justify-content:center;align-items:flex-end;padding-bottom:8px;gap:8px;pointer-events:none;z-index:10}
+#towerBar{display:flex;gap:4px;background:var(--panel);border:1px solid var(--cyan);border-radius:8px;padding:6px 10px;pointer-events:auto}
+.tbtn{width:56px;height:52px;background:rgba(0,40,60,.9);border:2px solid rgba(0,255,255,.5);border-radius:6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:all .12s;color:#fff;font-size:9px}
+.tbtn:hover{background:rgba(0,80,120,.9);border-color:var(--cyan);transform:translateY(-2px)}
+.tbtn.selected{border-color:var(--gold);box-shadow:0 0 12px rgba(255,221,0,.5);background:rgba(60,50,0,.8)}
+.tbtn.disabled{opacity:.4;cursor:not-allowed;transform:none}
+.tbtn .ticon{width:20px;height:20px;border-radius:3px;margin-bottom:2px}
+.tbtn .tcost{color:var(--gold);font-weight:700;font-size:10px}
+.tbtn .tkey{color:#668;font-size:8px}
+#actionBar{display:flex;flex-direction:column;gap:4px;pointer-events:auto}
+.abtn{padding:6px 12px;background:rgba(0,40,60,.9);border:2px solid var(--cyan);border-radius:6px;color:#fff;cursor:pointer;font-size:11px;font-weight:600;transition:all .15s;white-space:nowrap}
+.abtn:hover{background:rgba(0,80,120,.9)}
+.abtn.launch{border-color:#0f8;color:#0f8}
+.abtn.send{border-color:var(--red);color:var(--red)}
+
+/* Send panel - positioned to not block */
+#sendPanel{position:fixed;bottom:90px;right:16px;background:var(--panel);border:2px solid var(--red);border-radius:8px;padding:10px;display:none;min-width:180px;z-index:20;pointer-events:auto}
+#sendPanel.show{display:block}
+#sendPanel h4{color:var(--red);margin-bottom:8px;font-size:13px}
+.sopt{display:flex;justify-content:space-between;padding:6px 8px;margin:3px 0;background:rgba(80,0,0,.4);border-radius:4px;cursor:pointer;font-size:12px;transition:background .15s}
+.sopt:hover{background:rgba(120,20,20,.5)}
+.sopt.disabled{opacity:.4;cursor:not-allowed}
+.sopt .scost{color:var(--gold);font-weight:600}
+
+/* Tower info panel */
+#infoPanel{position:fixed;bottom:90px;left:16px;background:var(--panel);border:2px solid var(--cyan);border-radius:8px;padding:10px;display:none;min-width:160px;z-index:20;pointer-events:auto}
+#infoPanel.show{display:block}
+#infoPanel h4{color:var(--cyan);margin-bottom:6px;font-size:13px}
+.irow{display:flex;justify-content:space-between;font-size:11px;padding:2px 0;color:#bbb}
+.irow .iv{color:#fff;font-weight:600}
+#infoPanel .hint{margin-top:8px;font-size:9px;color:#668;border-top:1px solid #335;padding-top:6px}
+
+/* Menu overlay */
+#menuOverlay{position:fixed;inset:0;background:radial-gradient(ellipse at center,rgba(5,15,30,.97) 0%,rgba(0,0,0,.99) 100%);display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:100}
+#menuOverlay.hidden{display:none}
+#menuOverlay h1{font-size:52px;color:var(--cyan);text-shadow:0 0 30px rgba(0,255,255,.5);margin-bottom:4px}
+#menuOverlay h2{font-size:16px;color:#679;margin-bottom:32px;font-weight:400}
+.mbtn{width:280px;padding:14px 24px;margin:6px;background:rgba(0,40,80,.7);border:2px solid var(--cyan);border-radius:10px;color:#fff;font-size:15px;cursor:pointer;transition:all .2s}
+.mbtn:hover{background:rgba(0,80,140,.8);transform:scale(1.03);box-shadow:0 0 20px rgba(0,255,255,.3)}
+.mbtn .sub{font-size:11px;color:#89a;display:block;margin-top:4px}
+#menuOverlay .opts{margin-top:16px;display:flex;gap:16px}
+#menuOverlay .opts label{font-size:12px;color:#9ac;display:flex;align-items:center;gap:6px;cursor:pointer}
+#menuOverlay .opts input{accent-color:var(--cyan)}
+#controls{margin-top:24px;font-size:11px;color:#556;text-align:center;line-height:1.8}
+#controls span{color:var(--cyan)}
+
+/* Game over */
+#gameOverOverlay{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;flex-direction:column;justify-content:center;align-items:center;z-index:100}
+#gameOverOverlay.show{display:flex}
+#gameOverOverlay h1{font-size:48px;margin-bottom:12px}
+#gameOverOverlay.blue h1{color:var(--blue);text-shadow:0 0 30px rgba(0,170,255,.6)}
+#gameOverOverlay.red h1{color:var(--red);text-shadow:0 0 30px rgba(255,85,85,.6)}
+#gameOverOverlay p{color:#889;margin-bottom:24px;font-size:14px}
+
+/* Online connect panel */
+#connectOverlay{position:fixed;inset:0;background:rgba(0,0,0,.95);display:none;justify-content:center;align-items:center;z-index:100}
+#connectOverlay.show{display:flex}
+.cpanel{background:var(--panel);border:2px solid var(--cyan);border-radius:12px;padding:20px;width:90%;max-width:600px}
+.cpanel h2{color:var(--cyan);margin-bottom:12px}
+.ctabs{display:flex;gap:8px;margin-bottom:12px}
+.ctabs button{flex:1;padding:8px;background:rgba(0,40,60,.8);border:1px solid var(--cyan);border-radius:6px;color:#fff;cursor:pointer;font-size:13px}
+.ctabs button.active{background:rgba(0,100,150,.8)}
+.ctab{display:none}
+.ctab.active{display:block}
+.cpanel textarea{width:100%;height:80px;margin:6px 0;padding:8px;background:rgba(0,10,20,.9);color:#fff;border:1px solid #446;border-radius:6px;font-family:monospace;font-size:11px;resize:none}
+.cpanel .status{font-size:11px;color:#8ad;margin:6px 0}
+
+/* Help overlay */
+#helpOverlay{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;justify-content:center;align-items:center;z-index:150}
+#helpOverlay.show{display:flex}
+#helpContent{background:var(--panel);border:2px solid var(--cyan);border-radius:12px;padding:20px;max-width:500px;max-height:80vh;overflow-y:auto}
+#helpContent h2{color:var(--cyan);margin-bottom:12px;text-align:center}
+#helpContent table{width:100%;border-collapse:collapse}
+#helpContent td{padding:6px 10px;border-bottom:1px solid #223;font-size:12px}
+#helpContent .key{color:var(--gold);font-family:monospace;font-weight:600}
+#helpContent h3{color:#8cf;margin:16px 0 8px;font-size:13px}
+
+/* Chat for multiplayer */
+#chatBox{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);width:300px;display:none;z-index:15;pointer-events:auto}
+#chatBox.show{display:block}
+#chatLog{height:100px;overflow-y:auto;background:rgba(0,10,20,.85);border:1px solid #446;border-radius:6px 6px 0 0;padding:6px;font-size:11px}
+#chatInput{width:100%;padding:8px;background:rgba(0,20,40,.95);border:1px solid var(--cyan);border-top:none;border-radius:0 0 6px 6px;color:#fff;outline:none;font-size:12px}
+
+/* Responsive */
+@media(max-width:1200px){
+  .tbtn{width:48px;height:46px}
+  .tbtn .ticon{width:16px;height:16px}
+  #topHUD{padding:6px 10px}
+  .hud-panel{padding:4px 10px;gap:10px}
+  .hud-stat{font-size:11px}
+}
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+
+<div id="topHUD">
+  <div class="hud-panel blue">
+    <div class="hud-stat"><span class="icon">💙</span><span>BLUE</span></div>
+    <div class="hud-stat"><span class="icon">❤️</span><span class="val" id="blueLives">20</span></div>
+    <div class="hud-stat"><span class="icon">💰</span><span class="val" id="blueCredits">100</span></div>
+    <div class="hud-stat"><span class="icon">💀</span><span class="val" id="blueKills">0</span></div>
+  </div>
+  <div class="hud-panel" id="centerHUD">
+    <div id="phaseText">MENU</div>
+    <div id="waveText">Wave 1</div>
+    <div id="timerText">--</div>
+    <div id="modeText">Select Mode</div>
+  </div>
+  <div class="hud-panel red">
+    <div class="hud-stat"><span class="icon">❤️</span><span>RED</span></div>
+    <div class="hud-stat"><span class="icon">❤️</span><span class="val" id="redLives">20</span></div>
+    <div class="hud-stat"><span class="icon">💰</span><span class="val" id="redCredits">100</span></div>
+    <div class="hud-stat"><span class="icon">💀</span><span class="val" id="redKills">0</span></div>
+  </div>
+</div>
+
+<div id="bottomBar">
+  <div id="towerBar"></div>
+  <div id="actionBar">
+    <button class="abtn launch" id="launchBtn">▶ LAUNCH</button>
+    <button class="abtn send" id="sendBtn">⚔ SEND</button>
+    <button class="abtn" id="helpBtn">? HELP</button>
+  </div>
+</div>
+
+<div id="sendPanel">
+  <h4>⚔ Send Enemies</h4>
+  <div id="sendOpts"></div>
+</div>
+
+<div id="infoPanel">
+  <h4 id="infoName">Tower</h4>
+  <div class="irow"><span>Damage:</span><span class="iv" id="infoDmg">0</span></div>
+  <div class="irow"><span>Range:</span><span class="iv" id="infoRng">0</span></div>
+  <div class="irow"><span>Level:</span><span class="iv" id="infoLvl">1</span></div>
+  <div class="irow"><span>Upgrade:</span><span class="iv" id="infoUpg">$0</span></div>
+  <div class="irow"><span>Sell:</span><span class="iv" id="infoSell">$0</span></div>
+  <div class="hint">U = Upgrade | S = Sell | ESC = Deselect</div>
+</div>
+
+<div id="menuOverlay">
+  <h1>⭐ STARLAND TD ⭐</h1>
+  <h2>Competitive Tower Defense</h2>
+  <button class="mbtn" id="singleBtn">🎮 Single Player<span class="sub">Battle against AI opponent</span></button>
+  <button class="mbtn" id="sandboxBtn">🧪 Sandbox Mode<span class="sub">Unlimited credits, practice builds</span></button>
+  <button class="mbtn" id="localBtn">👥 Local 2-Player<span class="sub">Hot-seat multiplayer (TAB to switch)</span></button>
+  <button class="mbtn" id="onlineBtn">🌐 Online Multiplayer<span class="sub">P2P WebRTC connection</span></button>
+  <div class="opts">
+    <label><input type="checkbox" id="fastCheck"> Fast Mode (1.5×)</label>
+    <label><input type="checkbox" id="hardCheck"> Hard Mode</label>
+  </div>
+  <div id="controls">
+    <strong>Controls:</strong> <span>1-6</span> Select Tower | <span>U</span> Upgrade | <span>S</span> Sell | <span>ESC</span> Cancel<br>
+    <span>Click</span> Place/Select | <span>Right-Click</span> Deselect | <span>TAB</span> Switch Player (Local)
+  </div>
+</div>
+
+<div id="gameOverOverlay">
+  <h1 id="winnerText">VICTORY!</h1>
+  <p id="goStats">Waves: 0 | Kills: 0</p>
+  <button class="mbtn" id="returnBtn">Return to Menu</button>
+</div>
+
+<div id="connectOverlay">
+  <div class="cpanel">
+    <h2>🌐 Online Multiplayer</h2>
+    <div class="ctabs">
+      <button id="hostTabBtn" class="active">Host Game</button>
+      <button id="joinTabBtn">Join Game</button>
+    </div>
+    <div id="hostTab" class="ctab active">
+      <button class="abtn" id="createOfferBtn">1. Create Offer</button>
+      <textarea id="offerOut" readonly="" placeholder="Offer code appears here - send to friend"></textarea>
+      <textarea id="answerIn" placeholder="2. Paste friend's Answer code here"></textarea>
+      <button class="abtn" id="acceptAnswerBtn">3. Accept Answer</button>
+      <div class="status" id="hostStatus">Status: Not connected</div>
+      <button class="abtn launch" id="startOnlineBtn" disabled="" style="width:100%;margin-top:8px">Start Match</button>
+    </div>
+    <div id="joinTab" class="ctab">
+      <textarea id="offerIn" placeholder="1. Paste host's Offer code here"></textarea>
+      <button class="abtn" id="createAnswerBtn">2. Create Answer</button>
+      <textarea id="answerOut" readonly="" placeholder="Answer code appears here - send to host"></textarea>
+      <div class="status" id="joinStatus">Status: Not connected</div>
+    </div>
+    <button class="abtn" id="closeConnectBtn" style="width:100%;margin-top:12px">Close</button>
+  </div>
+</div>
+
+<div id="helpOverlay">
+  <div id="helpContent">
+    <h2>📖 How to Play</h2>
+    <h3>🎯 Objective</h3>
+    <p style="font-size:12px;color:#aaa;margin-bottom:12px">Defend your base while sending enemies to attack your opponent. Reduce their lives to 0 to win!</p>
+    <h3>🗼 Towers</h3>
+    <table>
+      <tbody><tr><td class="key">1</td><td><b>Debris</b> - Cheap, balanced damage</td></tr>
+      <tr><td class="key">2</td><td><b>Laser</b> - Continuous beam, high DPS</td></tr>
+      <tr><td class="key">3</td><td><b>Missile</b> - Area damage, explosive</td></tr>
+      <tr><td class="key">4</td><td><b>Tesla</b> - Chain lightning, hits multiple</td></tr>
+      <tr><td class="key">5</td><td><b>Frost</b> - Slows enemies</td></tr>
+      <tr><td class="key">6</td><td><b>Flak</b> - Anti-air specialist</td></tr>
+    </tbody></table>
+    <h3>👾 Enemies</h3>
+    <table>
+      <tbody><tr><td style="color:#0f0">Basic</td><td>Standard enemy</td></tr>
+      <tr><td style="color:#ff0">Fast</td><td>Quick but fragile</td></tr>
+      <tr><td style="color:#f80">Tank</td><td>Slow, heavy armor</td></tr>
+      <tr><td style="color:#f0f">Swarm</td><td>Weak but numerous</td></tr>
+      <tr><td style="color:#0ff">Flyer</td><td>Ignores maze, needs Flak</td></tr>
+      <tr><td style="color:#f00">Boss</td><td>Massive HP, appears every 5 waves</td></tr>
+      <tr><td style="color:#fff">Healer</td><td>Heals nearby enemies</td></tr>
+      <tr><td style="color:#a0f">Splitter</td><td>Splits into 2 on death</td></tr>
+    </tbody></table>
+    <h3>⌨️ Controls</h3>
+    <table>
+      <tbody><tr><td class="key">1-6</td><td>Select tower type</td></tr>
+      <tr><td class="key">U</td><td>Upgrade selected tower</td></tr>
+      <tr><td class="key">S</td><td>Sell selected tower</td></tr>
+      <tr><td class="key">ESC</td><td>Deselect / Close panels</td></tr>
+      <tr><td class="key">SPACE</td><td>Launch wave early</td></tr>
+      <tr><td class="key">TAB</td><td>Switch player (Local mode)</td></tr>
+    </tbody></table>
+    <button class="abtn" id="closeHelpBtn" style="width:100%;margin-top:16px">Close</button>
+  </div>
+</div>
+
+<div id="chatBox">
+  <div id="chatLog"></div>
+  <input id="chatInput" placeholder="Enter to chat..." maxlength="100">
+</div>
+
+<script>
+(()=>{
+'use strict';
+
+// ============ CONFIGURATION ============
+const CFG = {
+  WIDTH: 1920,
+  HEIGHT: 1080,
+  CELL: 40,
+  BOARD_W: 17,
+  BOARD_H: 23,
+  GAP: 120,
+  TPS: 60,
+  BUILD_TIME: 35,
+  MAX_LEVEL: 5,
+  START_LIVES: 20,
+  START_CREDITS: 150,
+  WAVE_BONUS: 25
+};
+
+CFG.BOARD_PX_W = CFG.BOARD_W * CFG.CELL;
+CFG.BOARD_PX_H = CFG.BOARD_H * CFG.CELL;
+CFG.TOTAL_W = CFG.BOARD_PX_W * 2 + CFG.GAP;
+CFG.OFFSET_X = (CFG.WIDTH - CFG.TOTAL_W) / 2;
+CFG.OFFSET_Y = (CFG.HEIGHT - CFG.BOARD_PX_H) / 2;
+
+// ============ COLORS ============
+const COLORS = {
+  blue: { pri: '#00aaff', light: '#66ddff', dark: '#004488', path: 'rgba(0,150,255,0.3)', glow: 'rgba(0,170,255,0.5)' },
+  red: { pri: '#ff5555', light: '#ff9999', dark: '#882222', path: 'rgba(255,80,80,0.3)', glow: 'rgba(255,85,85,0.5)' }
+};
+
+// ============ TOWER TYPES ============
+const TOWERS = {
+  DEBRIS:   { id:'DEBRIS',   name:'Debris',  cost:20,  dmg:12,  range:100, rate:800,  color:'#55aa55', proj:'#aaffaa', key:'1', aoe:0, slow:0, chain:0, antiAir:false, beam:false },
+  LASER:    { id:'LASER',    name:'Laser',   cost:40,  dmg:35,  range:150, rate:0,    color:'#ff3333', proj:'#ff6666', key:'2', aoe:0, slow:0, chain:0, antiAir:false, beam:true },
+  MISSILE:  { id:'MISSILE',  name:'Missile', cost:50,  dmg:40,  range:120, rate:1400, color:'#ff8800', proj:'#ffaa44', key:'3', aoe:50, slow:0, chain:0, antiAir:false, beam:false },
+  TESLA:    { id:'TESLA',    name:'Tesla',   cost:60,  dmg:25,  range:110, rate:900,  color:'#aa44ff', proj:'#dd88ff', key:'4', aoe:0, slow:0, chain:3, antiAir:false, beam:false },
+  FROST:    { id:'FROST',    name:'Frost',   cost:45,  dmg:8,   range:100, rate:500,  color:'#44ddff', proj:'#aaffff', key:'5', aoe:0, slow:0.5, slowDur:2.5, chain:0, antiAir:false, beam:false },
+  FLAK:     { id:'FLAK',     name:'Flak',    cost:55,  dmg:45,  range:180, rate:600,  color:'#ffff44', proj:'#ffffaa', key:'6', aoe:30, slow:0, chain:0, antiAir:true, beam:false }
+};
+
+const TOWER_LIST = Object.values(TOWERS);
+TOWER_LIST.forEach(t => {
+  t.cdTicks = t.beam ? 0 : Math.max(1, Math.round((t.rate / 1000) * CFG.TPS));
+  t.projSpeed = t.beam ? 0 : 300;
+});
+
+// ============ ENEMY TYPES ============
+const ENEMIES = {
+  BASIC:    { id:'BASIC',   name:'Basic',   hp:50,   speed:50,  value:8,   color:'#44ff44', flying:false, armor:0, regen:0, splits:0 },
+  FAST:     { id:'FAST',    name:'Fast',    hp:30,   speed:95,  value:10,  color:'#ffff44', flying:false, armor:0, regen:0, splits:0 },
+  TANK:     { id:'TANK',    name:'Tank',    hp:200,  speed:28,  value:20,  color:'#ff8844', flying:false, armor:0.3, regen:0, splits:0 },
+  SWARM:    { id:'SWARM',   name:'Swarm',   hp:20,   speed:65,  value:4,   color:'#ff44ff', flying:false, armor:0, regen:0, splits:0 },
+  FLYER:    { id:'FLYER',   name:'Flyer',   hp:60,   speed:75,  value:25,  color:'#44ffff', flying:true, armor:0, regen:0, splits:0 },
+  BOSS:     { id:'BOSS',    name:'Boss',    hp:800,  speed:22,  value:150, color:'#ff2222', flying:false, armor:0.2, regen:5, splits:0 },
+  HEALER:   { id:'HEALER',  name:'Healer',  hp:80,   speed:40,  value:30,  color:'#88ff88', flying:false, armor:0, regen:0, splits:0, heals:true },
+  SPLITTER: { id:'SPLITTER',name:'Splitter',hp:100,  speed:45,  value:18,  color:'#aa44ff', flying:false, armor:0, regen:0, splits:2 }
+};
+
+const SEND_COSTS = { BASIC:12, FAST:18, TANK:45, SWARM:8, FLYER:55, HEALER:40, SPLITTER:35 };
+
+// ============ WAVE DEFINITIONS ============
+function generateWave(waveNum, boardId) {
+  const enemies = [];
+  const baseCount = 8 + Math.floor(waveNum * 1.5);
+  const interval = Math.max(8, Math.floor(35 - waveNum * 0.5));
+  
+  // Wave composition based on wave number
+  const pool = ['BASIC'];
+  if (waveNum >= 2) pool.push('FAST');
+  if (waveNum >= 3) pool.push('SWARM', 'SWARM');
+  if (waveNum >= 4) pool.push('TANK');
+  if (waveNum >= 5) pool.push('FLYER');
+  if (waveNum >= 7) pool.push('HEALER');
+  if (waveNum >= 8) pool.push('SPLITTER');
+  
+  // Special wave compositions
+  let count = baseCount;
+  let types = [];
+  
+  if (waveNum % 5 === 0) {
+    // Boss wave
+    types.push('BOSS');
+    count = Math.floor(baseCount * 0.6);
+  }
+  
+  if (waveNum % 3 === 0 && waveNum >= 6) {
+    // Swarm wave
+    for (let i = 0; i < 8; i++) types.push('SWARM');
+  }
+  
+  if (waveNum % 4 === 0 && waveNum >= 8) {
+    // Air raid
+    for (let i = 0; i < 4; i++) types.push('FLYER');
+  }
+  
+  // Fill remaining with random from pool
+  const rng = new RNG((waveNum * 12345) ^ (boardId === 'blue' ? 0xAAAA : 0x5555));
+  while (types.length < count) {
+    types.push(pool[rng.nextInt(pool.length)]);
+  }
+  
+  // Shuffle
+  for (let i = types.length - 1; i > 0; i--) {
+    const j = rng.nextInt(i + 1);
+    [types[i], types[j]] = [types[j], types[i]];
+  }
+  
+  // Create spawn entries
+  let tick = 0;
+  for (const type of types) {
+    enemies.push({ tick, type, sent: false });
+    tick += type === 'SWARM' ? Math.floor(interval * 0.5) : interval;
+  }
+  
+  return enemies;
+}
+
+// ============ RNG ============
+class RNG {
+  constructor(seed) { this.s = seed >>> 0; }
+  next() { this.s = (this.s * 1664525 + 1013904223) >>> 0; return this.s / 4294967296; }
+  nextInt(max) { return Math.floor(this.next() * max); }
+}
+
+// ============ SOUND ============
+class Sound {
+  constructor() { this.on = false; this.ctx = null; }
+  init() { if (!this.ctx) { const A = window.AudioContext || window.webkitAudioContext; if (A) this.ctx = new A(); } }
+  toggle() { this.on = !this.on; if (this.on) this.init(); return this.on; }
+  play(type) {
+    if (!this.on || !this.ctx) return;
+    try {
+      const now = this.ctx.currentTime;
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      let f = 440, d = 0.1, w = 'sine';
+      switch(type) {
+        case 'build': f = 520; d = 0.08; w = 'square'; break;
+        case 'upgrade': f = 660; d = 0.1; w = 'triangle'; break;
+        case 'sell': f = 240; d = 0.08; w = 'sine'; break;
+        case 'shoot': f = 180; d = 0.05; w = 'sawtooth'; break;
+        case 'explode': f = 80; d = 0.15; w = 'triangle'; break;
+        case 'hit': f = 300; d = 0.05; w = 'square'; break;
+      }
+      o.type = w; o.frequency.setValueAtTime(f, now);
+      g.gain.setValueAtTime(0.001, now);
+      g.gain.exponentialRampToValueAtTime(0.06, now + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, now + d);
+      o.connect(g).connect(this.ctx.destination);
+      o.start(now); o.stop(now + d);
+    } catch(e) {}
+  }
+}
+
+// ============ MAIN GAME CLASS ============
+class Game {
+  constructor() {
+    this.canvas = document.getElementById('gameCanvas');
+    this.ctx = this.canvas.getContext('2d');
+    this.sound = new Sound();
+    
+    // State
+    this.mode = 'menu'; // menu, single, sandbox, local, online
+    this.phase = 'menu'; // menu, build, combat, gameover
+    this.wave = 1;
+    this.tick = 0;
+    this.buildTimer = 0;
+    this.speedMult = 1;
+    this.hardMode = false;
+    
+    // Players
+    this.localPlayer = 'blue';
+    this.currentPlayer = 'blue'; // For local multiplayer
+    this.players = {
+      blue: { lives: CFG.START_LIVES, credits: CFG.START_CREDITS, kills: 0 },
+      red: { lives: CFG.START_LIVES, credits: CFG.START_CREDITS, kills: 0 }
+    };
+    
+    // Selection
+    this.selectedType = null;
+    this.selectedTower = null;
+    this.hoverCell = null;
+    
+    // Boards
+    this.boards = {
+      blue: this.createBoard('blue'),
+      red: this.createBoard('red')
+    };
+    
+    // Networking
+    this.net = { on: false, connected: false, role: null, pc: null, dc: null };
+    
+    // IDs
+    this.nextId = 1;
+    
+    // Setup
+    this.resize();
+    this.createStarfield();
+    this.setupUI();
+    this.setupInput();
+    
+    // Start loop
+    this.lastTime = performance.now();
+    this.acc = 0;
+    requestAnimationFrame(t => this.loop(t));
+  }
+  
+  resize() {
+    const scale = Math.min(window.innerWidth / CFG.WIDTH, window.innerHeight / CFG.HEIGHT);
+    this.canvas.width = CFG.WIDTH;
+    this.canvas.height = CFG.HEIGHT;
+    this.canvas.style.width = (CFG.WIDTH * scale) + 'px';
+    this.canvas.style.height = (CFG.HEIGHT * scale) + 'px';
+    this.scale = scale;
+  }
+  
+  createStarfield() {
+    const c = document.createElement('canvas');
+    c.width = CFG.WIDTH; c.height = CFG.HEIGHT;
+    const ctx = c.getContext('2d');
+    const grad = ctx.createRadialGradient(CFG.WIDTH/2, CFG.HEIGHT/2, 100, CFG.WIDTH/2, CFG.HEIGHT/2, CFG.HEIGHT);
+    grad.addColorStop(0, '#0a1225');
+    grad.addColorStop(1, '#030508');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, CFG.WIDTH, CFG.HEIGHT);
+    for (let i = 0; i < 300; i++) {
+      const x = Math.random() * CFG.WIDTH;
+      const y = Math.random() * CFG.HEIGHT;
+      const r = Math.random() * 1.5 + 0.5;
+      const a = Math.random() * 0.8 + 0.2;
+      ctx.fillStyle = `rgba(200,220,255,${a})`;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    this.starfield = c;
+  }
+  
+  createBoard(id) {
+    const board = {
+      id,
+      grid: [],
+      towers: [],
+      enemies: [],
+      projectiles: [],
+      effects: [],
+      spawnQueue: [],
+      spawnIndex: 0,
+      pathCache: null
+    };
+    this.initBoard(board);
+    return board;
+  }
+  
+  initBoard(board) {
+    const w = CFG.BOARD_W, h = CFG.BOARD_H;
+    board.grid = [];
+    for (let y = 0; y < h; y++) {
+      board.grid[y] = [];
+      for (let x = 0; x < w; x++) {
+        // Border cells are walls
+        board.grid[y][x] = (x === 0 || x === w-1 || y === 0 || y === h-1) ? 2 : 0;
+      }
+    }
+    
+    // Spawn and exit positions
+    const midY = Math.floor(h / 2);
+    if (board.id === 'blue') {
+      board.spawn = { x: w - 1, y: midY };
+      board.exit = { x: 0, y: midY };
+    } else {
+      board.spawn = { x: 0, y: midY };
+      board.exit = { x: w - 1, y: midY };
+    }
+    board.grid[board.spawn.y][board.spawn.x] = 3; // Spawn
+    board.grid[board.exit.y][board.exit.x] = 4; // Exit
+    
+    // Clear entities
+    board.towers = [];
+    board.enemies = [];
+    board.projectiles = [];
+    board.effects = [];
+    board.spawnQueue = [];
+    board.spawnIndex = 0;
+    
+    this.calcPath(board);
+  }
+  
+  calcPath(board) {
+    board.pathCache = this.findPath(board, board.spawn, board.exit, null);
+  }
+  
+  findPath(board, start, end, blocked) {
+    const w = CFG.BOARD_W, h = CFG.BOARD_H;
+    const visited = new Set();
+    const queue = [{ x: start.x, y: start.y, path: [] }];
+    visited.add(start.y * w + start.x);
+    
+    while (queue.length > 0) {
+      const curr = queue.shift();
+      const px = curr.x * CFG.CELL + CFG.CELL / 2;
+      const py = curr.y * CFG.CELL + CFG.CELL / 2;
+      const newPath = [...curr.path, { x: px, y: py }];
+      
+      if (curr.x === end.x && curr.y === end.y) {
+        return newPath;
+      }
+      
+      const dirs = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
+      for (const d of dirs) {
+        const nx = curr.x + d.dx, ny = curr.y + d.dy;
+        if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+        if (blocked && nx === blocked.x && ny === blocked.y) continue;
+        const cell = board.grid[ny][nx];
+        if (cell === 1 || cell === 2) continue;
+        const key = ny * w + nx;
+        if (visited.has(key)) continue;
+        visited.add(key);
+        queue.push({ x: nx, y: ny, path: newPath });
+      }
+    }
+    return null;
+  }
+  
+  // ============ UI SETUP ============
+  setupUI() {
+    // Tower buttons
+    const towerBar = document.getElementById('towerBar');
+    towerBar.innerHTML = '';
+    for (const t of TOWER_LIST) {
+      const btn = document.createElement('div');
+      btn.className = 'tbtn';
+      btn.id = 'tbtn-' + t.id;
+      btn.innerHTML = `<div class="ticon" style="background:${t.color}"></div><div>${t.name}</div><div class="tcost">$${t.cost}</div><div class="tkey">${t.key}</div>`;
+      btn.addEventListener('click', () => this.selectTowerType(t.id));
+      towerBar.appendChild(btn);
+    }
+    
+    // Send options
+    const sendOpts = document.getElementById('sendOpts');
+    sendOpts.innerHTML = '';
+    for (const [id, cost] of Object.entries(SEND_COSTS)) {
+      const opt = document.createElement('div');
+      opt.className = 'sopt';
+      opt.dataset.type = id;
+      opt.innerHTML = `<span>${ENEMIES[id].name}</span><span class="scost">$${cost}</span>`;
+      opt.addEventListener('click', () => this.sendEnemy(id));
+      sendOpts.appendChild(opt);
+    }
+    
+    // Menu buttons
+    document.getElementById('singleBtn').addEventListener('click', () => this.startGame('single'));
+    document.getElementById('sandboxBtn').addEventListener('click', () => this.startGame('sandbox'));
+    document.getElementById('localBtn').addEventListener('click', () => this.startGame('local'));
+    document.getElementById('onlineBtn').addEventListener('click', () => this.showConnect());
+    document.getElementById('returnBtn').addEventListener('click', () => this.returnToMenu());
+    
+    // Action buttons
+    document.getElementById('launchBtn').addEventListener('click', () => this.launchWave());
+    document.getElementById('sendBtn').addEventListener('click', () => this.toggleSendPanel());
+    document.getElementById('helpBtn').addEventListener('click', () => this.toggleHelp());
+    document.getElementById('closeHelpBtn').addEventListener('click', () => this.toggleHelp());
+    
+    // Connect UI
+    document.getElementById('hostTabBtn').addEventListener('click', () => this.switchConnectTab('host'));
+    document.getElementById('joinTabBtn').addEventListener('click', () => this.switchConnectTab('join'));
+    document.getElementById('createOfferBtn').addEventListener('click', () => this.createOffer());
+    document.getElementById('acceptAnswerBtn').addEventListener('click', () => this.acceptAnswer());
+    document.getElementById('createAnswerBtn').addEventListener('click', () => this.createAnswer());
+    document.getElementById('startOnlineBtn').addEventListener('click', () => this.startOnlineGame());
+    document.getElementById('closeConnectBtn').addEventListener('click', () => this.hideConnect());
+    
+    // Chat
+    document.getElementById('chatInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        const text = e.target.value.trim();
+        if (text) this.sendChatMsg(text);
+        e.target.value = '';
+      }
+    });
+    
+    window.addEventListener('resize', () => this.resize());
+  }
+  
+  setupInput() {
+    this.canvas.addEventListener('click', e => this.onClick(e));
+    this.canvas.addEventListener('mousemove', e => this.onMouseMove(e));
+    this.canvas.addEventListener('contextmenu', e => { e.preventDefault(); this.deselect(); });
+    document.addEventListener('keydown', e => this.onKeyDown(e));
+  }
+  
+  // ============ INPUT HANDLERS ============
+  getCanvasPos(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (CFG.WIDTH / rect.width);
+    const y = (e.clientY - rect.top) * (CFG.HEIGHT / rect.height);
+    return { x, y };
+  }
+  
+  getBoardAt(x, y) {
+    // Blue board
+    const bx1 = CFG.OFFSET_X, bx2 = CFG.OFFSET_X + CFG.BOARD_PX_W;
+    const by1 = CFG.OFFSET_Y, by2 = CFG.OFFSET_Y + CFG.BOARD_PX_H;
+    if (x >= bx1 && x < bx2 && y >= by1 && y < by2) {
+      return { board: this.boards.blue, lx: x - bx1, ly: y - by1 };
+    }
+    // Red board
+    const rx1 = CFG.OFFSET_X + CFG.BOARD_PX_W + CFG.GAP;
+    const rx2 = rx1 + CFG.BOARD_PX_W;
+    if (x >= rx1 && x < rx2 && y >= by1 && y < by2) {
+      return { board: this.boards.red, lx: x - rx1, ly: y - by1 };
+    }
+    return null;
+  }
+  
+  onClick(e) {
+    if (this.phase === 'menu' || this.phase === 'gameover') return;
+    this.sound.init();
+    
+    const pos = this.getCanvasPos(e);
+    const hit = this.getBoardAt(pos.x, pos.y);
+    if (!hit) { this.deselect(); return; }
+    
+    const { board, lx, ly } = hit;
+    const gx = Math.floor(lx / CFG.CELL);
+    const gy = Math.floor(ly / CFG.CELL);
+    
+    // Check if player can control this board
+    if (!this.canControlBoard(board.id)) return;
+    
+    // Check for tower at position
+    const tower = board.towers.find(t => t.gx === gx && t.gy === gy);
+    if (tower) {
+      this.selectTower(tower);
+      return;
+    }
+    
+    // Try to place tower
+    if (this.selectedType) {
+      this.placeTower(board.id, this.selectedType, gx, gy);
+    } else {
+      this.deselect();
+    }
+  }
+  
+  onMouseMove(e) {
+    const pos = this.getCanvasPos(e);
+    const hit = this.getBoardAt(pos.x, pos.y);
+    if (!hit) { this.hoverCell = null; return; }
+    
+    const { board, lx, ly } = hit;
+    if (!this.canControlBoard(board.id)) { this.hoverCell = null; return; }
+    
+    const gx = Math.floor(lx / CFG.CELL);
+    const gy = Math.floor(ly / CFG.CELL);
+    this.hoverCell = { board: board.id, gx, gy };
+  }
+  
+  onKeyDown(e) {
+    if (this.phase === 'menu' || this.phase === 'gameover') return;
+    if (document.activeElement.tagName === 'INPUT') return;
+    
+    const key = e.key.toLowerCase();
+    
+    if (key === 'escape') {
+      this.deselect();
+      document.getElementById('sendPanel').classList.remove('show');
+      document.getElementById('helpOverlay').classList.remove('show');
+      return;
+    }
+    
+    if (key === ' ') {
+      e.preventDefault();
+      this.launchWave();
+      return;
+    }
+    
+    if (key === 'tab' && this.mode === 'local') {
+      e.preventDefault();
+      this.currentPlayer = this.currentPlayer === 'blue' ? 'red' : 'blue';
+      this.deselect();
+      this.updateUI();
+      return;
+    }
+    
+    // Tower selection
+    const towerKeys = { '1': 'DEBRIS', '2': 'LASER', '3': 'MISSILE', '4': 'TESLA', '5': 'FROST', '6': 'FLAK' };
+    if (towerKeys[key]) {
+      this.selectTowerType(towerKeys[key]);
+      return;
+    }
+    
+    // Tower actions
+    if (key === 'u') this.upgradeTower();
+    if (key === 's') this.sellTower();
+  }
+  
+  // ============ GAME CONTROL ============
+  startGame(mode) {
+    this.mode = mode;
+    this.phase = 'build';
+    this.wave = 1;
+    this.tick = 0;
+    this.buildTimer = CFG.BUILD_TIME * CFG.TPS;
+    this.speedMult = document.getElementById('fastCheck').checked ? 1.5 : 1;
+    this.hardMode = document.getElementById('hardCheck').checked;
+    
+    // Reset players
+    this.players.blue = { lives: CFG.START_LIVES, credits: CFG.START_CREDITS, kills: 0 };
+    this.players.red = { lives: CFG.START_LIVES, credits: CFG.START_CREDITS, kills: 0 };
+    
+    if (mode === 'sandbox') {
+      this.players.blue.credits = 99999;
+      this.players.red.credits = 99999;
+      this.buildTimer = -1; // Infinite build time
+    }
+    
+    this.localPlayer = 'blue';
+    this.currentPlayer = 'blue';
+    
+    // Reset boards
+    this.initBoard(this.boards.blue);
+    this.initBoard(this.boards.red);
+    
+    this.nextId = 1;
+    this.deselect();
+    
+    document.getElementById('menuOverlay').classList.add('hidden');
+    document.getElementById('gameOverOverlay').classList.remove('show');
+    
+    this.updateUI();
+  }
+  
+  returnToMenu() {
+    this.phase = 'menu';
+    this.mode = 'menu';
+    document.getElementById('menuOverlay').classList.remove('hidden');
+    document.getElementById('gameOverOverlay').classList.remove('show');
+  }
+  
+  launchWave() {
+    if (this.phase !== 'build') return;
+    this.startCombat();
+  }
+  
+  startCombat() {
+    this.phase = 'combat';
+    
+    // Generate wave spawns for both boards
+    const blueWave = generateWave(this.wave, 'blue');
+    const redWave = generateWave(this.wave, 'red');
+    
+    // Enemies attack the opposite board
+    this.boards.blue.spawnQueue = blueWave.map(e => ({ ...e, tick: this.tick + e.tick, owner: 'red' }));
+    this.boards.red.spawnQueue = redWave.map(e => ({ ...e, tick: this.tick + e.tick, owner: 'blue' }));
+    this.boards.blue.spawnIndex = 0;
+    this.boards.red.spawnIndex = 0;
+    
+    this.updateUI();
+  }
+  
+  startBuild() {
+    this.phase = 'build';
+    this.wave++;
+    this.buildTimer = this.mode === 'sandbox' ? -1 : CFG.BUILD_TIME * CFG.TPS;
+    
+    // Wave bonus
+    const bonus = CFG.WAVE_BONUS + this.wave * 5;
+    this.players.blue.credits += bonus;
+    this.players.red.credits += bonus;
+    
+    this.updateUI();
+  }
+  
+  endGame(winner) {
+    this.phase = 'gameover';
+    const overlay = document.getElementById('gameOverOverlay');
+    overlay.classList.add('show');
+    overlay.classList.remove('blue', 'red');
+    overlay.classList.add(winner);
+    document.getElementById('winnerText').textContent = winner.toUpperCase() + ' WINS!';
+    document.getElementById('goStats').textContent = `Waves: ${this.wave} | Blue Kills: ${this.players.blue.kills} | Red Kills: ${this.players.red.kills}`;
+  }
+  
+  // ============ GAME LOGIC ============
+  canControlBoard(boardId) {
+    if (this.mode === 'local') return boardId === this.currentPlayer;
+    if (this.mode === 'online') return boardId === this.localPlayer;
+    return boardId === 'blue'; // Single/sandbox - control blue
+  }
+  
+  getActivePlayer() {
+    if (this.mode === 'local') return this.currentPlayer;
+    if (this.mode === 'online') return this.localPlayer;
+    return 'blue';
+  }
+  
+  selectTowerType(typeId) {
+    if (this.phase !== 'build' && this.mode !== 'sandbox') return;
+    const type = TOWERS[typeId];
+    if (!type) return;
+    
+    const player = this.getActivePlayer();
+    if (this.players[player].credits < type.cost) return;
+    
+    this.selectedType = typeId;
+    this.selectedTower = null;
+    document.getElementById('infoPanel').classList.remove('show');
+    
+    // Update UI
+    document.querySelectorAll('.tbtn').forEach(b => b.classList.remove('selected'));
+    const btn = document.getElementById('tbtn-' + typeId);
+    if (btn) btn.classList.add('selected');
+  }
+  
+  selectTower(tower) {
+    this.selectedTower = tower;
+    this.selectedType = null;
+    document.querySelectorAll('.tbtn').forEach(b => b.classList.remove('selected'));
+    this.updateTowerInfo();
+    document.getElementById('infoPanel').classList.add('show');
+  }
+  
+  deselect() {
+    this.selectedType = null;
+    this.selectedTower = null;
+    document.querySelectorAll('.tbtn').forEach(b => b.classList.remove('selected'));
+    document.getElementById('infoPanel').classList.remove('show');
+  }
+  
+  placeTower(boardId, typeId, gx, gy) {
+    if (this.phase !== 'build' && this.mode !== 'sandbox') return false;
+    
+    const board = this.boards[boardId];
+    const type = TOWERS[typeId];
+    const player = boardId;
+    
+    if (!type || !board.grid[gy] || board.grid[gy][gx] !== 0) return false;
+    if (this.players[player].credits < type.cost) return false;
+    
+    // Check path still exists
+    const testPath = this.findPath(board, board.spawn, board.exit, { x: gx, y: gy });
+    if (!testPath) {
+      this.addEffect(board, gx * CFG.CELL + CFG.CELL/2, gy * CFG.CELL + CFG.CELL/2, '#f44', 'text', 'BLOCKED');
+      return false;
+    }
+    
+    this.players[player].credits -= type.cost;
+    board.grid[gy][gx] = 1;
+    
+    const tower = {
+      id: this.nextId++,
+      type,
+      gx, gy,
+      x: gx * CFG.CELL + CFG.CELL / 2,
+      y: gy * CFG.CELL + CFG.CELL / 2,
+      damage: type.dmg,
+      range: type.range,
+      cooldown: 0,
+      level: 1,
+      totalCost: type.cost,
+      owner: player,
+      angle: 0,
+      targetId: null
+    };
+    
+    board.towers.push(tower);
+    this.calcPath(board);
+    this.recalcEnemyPaths(board);
+    this.addEffect(board, tower.x, tower.y, type.color, 'ring');
+    this.sound.play('build');
+    this.updateUI();
+    
+    if (this.net.on) this.sendNetMsg({ type: 'place', boardId, typeId, gx, gy });
+    
+    return true;
+  }
+  
+  upgradeTower() {
+    if (!this.selectedTower) return;
+    if (this.phase !== 'build' && this.mode !== 'sandbox') return;
+    
+    const tower = this.selectedTower;
+    const board = this.boards[tower.owner];
+    const player = tower.owner;
+    
+    if (tower.level >= CFG.MAX_LEVEL) return;
+    
+    const cost = this.getUpgradeCost(tower);
+    if (this.players[player].credits < cost) return;
+    
+    this.players[player].credits -= cost;
+    tower.level++;
+    tower.damage = Math.floor(tower.damage * 1.5);
+    tower.range = Math.floor(tower.range * 1.1);
+    tower.totalCost += cost;
+    
+    this.addEffect(board, tower.x, tower.y, '#ff0', 'ring');
+    this.sound.play('upgrade');
+    this.updateTowerInfo();
+    this.updateUI();
+    
+    if (this.net.on) this.sendNetMsg({ type: 'upgrade', boardId: tower.owner, towerId: tower.id });
+  }
+  
+  sellTower() {
+    if (!this.selectedTower) return;
+    if (this.phase !== 'build' && this.mode !== 'sandbox') return;
+    
+    const tower = this.selectedTower;
+    const board = this.boards[tower.owner];
+    const player = tower.owner;
+    
+    const refund = Math.floor(tower.totalCost * 0.7);
+    this.players[player].credits += refund;
+    
+    board.grid[tower.gy][tower.gx] = 0;
+    board.towers = board.towers.filter(t => t.id !== tower.id);
+    
+    this.calcPath(board);
+    this.recalcEnemyPaths(board);
+    this.addEffect(board, tower.x, tower.y, '#fd0', 'text', '+$' + refund);
+    this.sound.play('sell');
+    this.deselect();
+    this.updateUI();
+    
+    if (this.net.on) this.sendNetMsg({ type: 'sell', boardId: tower.owner, towerId: tower.id });
+  }
+  
+  getUpgradeCost(tower) {
+    return Math.floor(tower.type.cost * Math.pow(1.8, tower.level));
+  }
+  
+  sendEnemy(typeId) {
+    if (this.phase !== 'combat' && this.mode !== 'sandbox') return;
+    
+    const player = this.getActivePlayer();
+    const cost = this.getSendCost(typeId);
+    
+    if (this.players[player].credits < cost) return;
+    
+    this.players[player].credits -= cost;
+    
+    // Send to opponent's board
+    const targetBoard = this.boards[player === 'blue' ? 'red' : 'blue'];
+    this.spawnEnemy(targetBoard, typeId, player, true);
+    
+    document.getElementById('sendPanel').classList.remove('show');
+    this.sound.play('shoot');
+    this.updateUI();
+    
+    if (this.net.on) this.sendNetMsg({ type: 'send', typeId, player });
+  }
+  
+  getSendCost(typeId) {
+    const base = SEND_COSTS[typeId] || 20;
+    return Math.floor(base * (1 + (this.wave - 1) * 0.1));
+  }
+  
+  spawnEnemy(board, typeId, owner, sent = false) {
+    const type = ENEMIES[typeId];
+    if (!type) return;
+    
+    const hpMult = this.hardMode ? 1.5 : 1;
+    const waveMult = 1 + (this.wave - 1) * 0.25;
+    
+    const enemy = {
+      id: this.nextId++,
+      type,
+      x: board.spawn.x * CFG.CELL + CFG.CELL / 2,
+      y: board.spawn.y * CFG.CELL + CFG.CELL / 2,
+      hp: type.hp * hpMult * waveMult,
+      maxHp: type.hp * hpMult * waveMult,
+      speed: type.speed,
+      owner,
+      flying: type.flying,
+      armor: type.armor,
+      regen: type.regen,
+      heals: type.heals || false,
+      splits: type.splits || 0,
+      sent,
+      value: Math.floor(type.value * (1 + (this.wave - 1) * 0.05)),
+      path: null,
+      pathIndex: 0,
+      slowUntil: 0,
+      slowFactor: 1
+    };
+    
+    if (enemy.flying) {
+      enemy.path = [
+        { x: enemy.x, y: enemy.y },
+        { x: board.exit.x * CFG.CELL + CFG.CELL / 2, y: board.exit.y * CFG.CELL + CFG.CELL / 2 }
+      ];
+    } else {
+      enemy.path = this.findPath(board, board.spawn, board.exit, null);
+    }
+    
+    if (enemy.path) board.enemies.push(enemy);
+  }
+  
+  recalcEnemyPaths(board) {
+    for (const enemy of board.enemies) {
+      if (enemy.flying) continue;
+      const gx = Math.floor(enemy.x / CFG.CELL);
+      const gy = Math.floor(enemy.y / CFG.CELL);
+      enemy.path = this.findPath(board, { x: gx, y: gy }, board.exit, null);
+      enemy.pathIndex = 0;
+    }
+  }
+  
+  addEffect(board, x, y, color, type, text = '') {
+    board.effects.push({
+      x, y, color, type, text,
+      radius: 0,
+      alpha: 1,
+      life: 0.5,
+      maxLife: 0.5
+    });
+  }
+  
+  // ============ UPDATE LOOP ============
+  loop(now) {
+    const dt = (now - this.lastTime) / 1000;
+    this.lastTime = now;
+    
+    if (this.phase === 'build' || this.phase === 'combat') {
+      this.acc += dt * this.speedMult;
+      const step = 1 / CFG.TPS;
+      while (this.acc >= step) {
+        this.update();
+        this.acc -= step;
+      }
+    }
+    
+    this.render();
+    requestAnimationFrame(t => this.loop(t));
+  }
+  
+  update() {
+    this.tick++;
+    
+    if (this.phase === 'build') {
+      if (this.buildTimer > 0) {
+        this.buildTimer--;
+        if (this.buildTimer <= 0) this.startCombat();
+      }
+    }
+    
+    if (this.phase === 'combat' || this.mode === 'sandbox') {
+      this.updateSpawns();
+      this.updateBoards();
+      if (this.phase === 'combat') this.checkWaveEnd();
+    }
+    
+    // AI for single player
+    if (this.mode === 'single') this.updateAI();
+    
+    // Update UI periodically
+    if (this.tick % 10 === 0) this.updateUI();
+  }
+  
+  updateSpawns() {
+    for (const board of [this.boards.blue, this.boards.red]) {
+      while (board.spawnIndex < board.spawnQueue.length) {
+        const spawn = board.spawnQueue[board.spawnIndex];
+        if (spawn.tick > this.tick) break;
+        this.spawnEnemy(board, spawn.type, spawn.owner, spawn.sent);
+        board.spawnIndex++;
+      }
+    }
+  }
+  
+  updateBoards() {
+    for (const board of [this.boards.blue, this.boards.red]) {
+      this.updateTowers(board);
+      this.updateProjectiles(board);
+      this.updateEnemies(board);
+      this.updateEffects(board);
+    }
+  }
+  
+  updateTowers(board) {
+    for (const tower of board.towers) {
+      // Find target
+      let target = null;
+      let bestDist = tower.range * tower.range;
+      
+      for (const enemy of board.enemies) {
+        if (enemy.owner === tower.owner) continue;
+        if (tower.type.antiAir && !enemy.flying) continue;
+        if (!tower.type.antiAir && enemy.flying) continue;
+        
+        const dx = enemy.x - tower.x;
+        const dy = enemy.y - tower.y;
+        const dist = dx * dx + dy * dy;
+        
+        if (dist <= bestDist) {
+          bestDist = dist;
+          target = enemy;
+        }
+      }
+      
+      tower.targetId = target ? target.id : null;
+      if (target) {
+        tower.angle = Math.atan2(target.y - tower.y, target.x - tower.x);
+      }
+      
+      // Beam towers do continuous damage
+      if (tower.type.beam && target) {
+        const dps = tower.damage / CFG.TPS;
+        this.damageEnemy(target, dps, tower.type);
+        continue;
+      }
+      
+      // Cooldown
+      if (tower.cooldown > 0) {
+        tower.cooldown--;
+        continue;
+      }
+      
+      // Fire
+      if (target) {
+        tower.cooldown = tower.type.cdTicks;
+        
+        if (tower.type.chain > 0) {
+          // Chain lightning
+          this.chainLightning(board, tower, target);
+        } else {
+          // Regular projectile
+          board.projectiles.push({
+            id: this.nextId++,
+            x: tower.x,
+            y: tower.y,
+            targetId: target.id,
+            tx: target.x,
+            ty: target.y,
+            speed: tower.type.projSpeed,
+            damage: tower.damage,
+            color: tower.type.proj,
+            aoe: tower.type.aoe,
+            slow: tower.type.slow || 0,
+            slowDur: tower.type.slowDur || 0,
+            owner: tower.owner
+          });
+        }
+      }
+    }
+  }
+  
+  chainLightning(board, tower, firstTarget) {
+    const targets = [firstTarget];
+    let current = firstTarget;
+    
+    for (let i = 0; i < tower.type.chain; i++) {
+      let next = null;
+      let bestDist = 150 * 150;
+      
+      for (const enemy of board.enemies) {
+        if (enemy.owner === tower.owner) continue;
+        if (targets.includes(enemy)) continue;
+        
+        const dx = enemy.x - current.x;
+        const dy = enemy.y - current.y;
+        const dist = dx * dx + dy * dy;
+        
+        if (dist < bestDist) {
+          bestDist = dist;
+          next = enemy;
+        }
+      }
+      
+      if (next) {
+        targets.push(next);
+        current = next;
+      } else break;
+    }
+    
+    // Damage all targets and create visual effect
+    for (let i = 0; i < targets.length; i++) {
+      const dmg = tower.damage * Math.pow(0.7, i);
+      this.damageEnemy(targets[i], dmg, tower.type);
+      
+      if (i > 0) {
+        this.addEffect(board, targets[i].x, targets[i].y, tower.type.proj, 'lightning');
+      }
+    }
+    
+    this.addEffect(board, tower.x, tower.y, tower.type.proj, 'ring');
+  }
+  
+  updateProjectiles(board) {
+    const enemyMap = new Map(board.enemies.map(e => [e.id, e]));
+    
+    for (let i = board.projectiles.length - 1; i >= 0; i--) {
+      const proj = board.projectiles[i];
+      
+      // Update target position
+      const target = enemyMap.get(proj.targetId);
+      if (target) {
+        proj.tx = target.x;
+        proj.ty = target.y;
+      }
+      
+      // Move towards target
+      const dx = proj.tx - proj.x;
+      const dy = proj.ty - proj.y;
+      const dist = Math.hypot(dx, dy);
+      const step = proj.speed / CFG.TPS;
+      
+      if (dist <= step) {
+        // Hit
+        if (proj.aoe > 0) {
+          // AOE damage
+          for (const enemy of board.enemies) {
+            if (enemy.owner === proj.owner) continue;
+            const d = Math.hypot(enemy.x - proj.x, enemy.y - proj.y);
+            if (d <= proj.aoe) {
+              const falloff = 1 - (d / proj.aoe) * 0.5;
+              this.damageEnemy(enemy, proj.damage * falloff, { slow: proj.slow, slowDur: proj.slowDur });
+            }
+          }
+          this.addEffect(board, proj.x, proj.y, proj.color, 'explosion');
+          this.sound.play('explode');
+        } else {
+          // Single target
+          const hit = target || this.findNearestEnemy(board, proj.x, proj.y, proj.owner);
+          if (hit) {
+            this.damageEnemy(hit, proj.damage, { slow: proj.slow, slowDur: proj.slowDur });
+          }
+        }
+        board.projectiles.splice(i, 1);
+      } else {
+        proj.x += (dx / dist) * step;
+        proj.y += (dy / dist) * step;
+      }
+    }
+  }
+  
+  findNearestEnemy(board, x, y, excludeOwner) {
+    let best = null;
+    let bestDist = 30 * 30;
+    for (const enemy of board.enemies) {
+      if (enemy.owner === excludeOwner) continue;
+      const d = (enemy.x - x) ** 2 + (enemy.y - y) ** 2;
+      if (d < bestDist) {
+        bestDist = d;
+        best = enemy;
+      }
+    }
+    return best;
+  }
+  
+  damageEnemy(enemy, damage, effects = {}) {
+    // Apply armor
+    const actualDmg = damage * (1 - enemy.armor);
+    enemy.hp -= actualDmg;
+    
+    // Apply slow
+    if (effects.slow && effects.slowDur) {
+      enemy.slowUntil = Math.max(enemy.slowUntil, this.tick + effects.slowDur * CFG.TPS);
+      enemy.slowFactor = Math.min(enemy.slowFactor, 1 - effects.slow);
+    }
+  }
+  
+  updateEnemies(board) {
+    // Healer aura
+    for (const enemy of board.enemies) {
+      if (enemy.heals) {
+        for (const other of board.enemies) {
+          if (other === enemy) continue;
+          const d = Math.hypot(other.x - enemy.x, other.y - enemy.y);
+          if (d < 80) {
+            other.hp = Math.min(other.maxHp, other.hp + 0.5);
+          }
+        }
+      }
+      // Regen
+      if (enemy.regen > 0) {
+        enemy.hp = Math.min(enemy.maxHp, enemy.hp + enemy.regen / CFG.TPS);
+      }
+    }
+    
+    for (let i = board.enemies.length - 1; i >= 0; i--) {
+      const enemy = board.enemies[i];
+      
+      // Check death
+      if (enemy.hp <= 0) {
+        const defender = board.id;
+        const bounty = Math.floor(enemy.value * (enemy.sent ? 1.5 : 1));
+        this.players[defender].credits += bounty;
+        this.players[defender].kills++;
+        
+        this.addEffect(board, enemy.x, enemy.y, '#fd0', 'text', '+$' + bounty);
+        this.addEffect(board, enemy.x, enemy.y, COLORS[enemy.owner].pri, 'explosion');
+        
+        // Splitter
+        if (enemy.splits > 0) {
+          for (let s = 0; s < enemy.splits; s++) {
+            const child = {
+              ...enemy,
+              id: this.nextId++,
+              hp: enemy.maxHp * 0.3,
+              maxHp: enemy.maxHp * 0.3,
+              value: Math.floor(enemy.value * 0.3),
+              splits: 0,
+              x: enemy.x + (Math.random() - 0.5) * 20,
+              y: enemy.y + (Math.random() - 0.5) * 20
+            };
+            if (!child.flying) {
+              const gx = Math.floor(child.x / CFG.CELL);
+              const gy = Math.floor(child.y / CFG.CELL);
+              child.path = this.findPath(board, { x: gx, y: gy }, board.exit, null);
+              child.pathIndex = 0;
+            }
+            if (child.path) board.enemies.push(child);
+          }
+        }
+        
+        board.enemies.splice(i, 1);
+        continue;
+      }
+      
+      // Movement
+      let speed = enemy.speed;
+      if (enemy.slowUntil > this.tick) {
+        speed *= enemy.slowFactor;
+      } else {
+        enemy.slowFactor = 1;
+      }
+      
+      // Speed boost when not in tower range
+      let inRange = false;
+      for (const tower of board.towers) {
+        if (enemy.flying && !tower.type.antiAir) continue;
+        if (!enemy.flying && tower.type.antiAir) continue;
+        const d = (enemy.x - tower.x) ** 2 + (enemy.y - tower.y) ** 2;
+        if (d <= tower.range * tower.range) {
+          inRange = true;
+          break;
+        }
+      }
+      if (!inRange) speed *= 1.4;
+      
+      const moveAmount = speed / CFG.TPS;
+      
+      if (!enemy.path || enemy.pathIndex >= enemy.path.length) {
+        enemy.path = [{ x: board.exit.x * CFG.CELL + CFG.CELL / 2, y: board.exit.y * CFG.CELL + CFG.CELL / 2 }];
+        enemy.pathIndex = 0;
+      }
+      
+      const target = enemy.path[enemy.pathIndex];
+      const dx = target.x - enemy.x;
+      const dy = target.y - enemy.y;
+      const dist = Math.hypot(dx, dy);
+      
+      if (dist <= moveAmount) {
+        enemy.x = target.x;
+        enemy.y = target.y;
+        enemy.pathIndex++;
+      } else {
+        enemy.x += (dx / dist) * moveAmount;
+        enemy.y += (dy / dist) * moveAmount;
+      }
+      
+      // Check if reached exit
+      if (enemy.pathIndex >= enemy.path.length) {
+        const defender = board.id;
+        this.players[defender].lives--;
+        this.addEffect(board, enemy.x, enemy.y, '#f44', 'text', '-1 LIFE');
+        board.enemies.splice(i, 1);
+        
+        if (this.players[defender].lives <= 0) {
+          this.endGame(enemy.owner);
+        }
+      }
+    }
+  }
+  
+  updateEffects(board) {
+    for (let i = board.effects.length - 1; i >= 0; i--) {
+      const fx = board.effects[i];
+      fx.life -= 1 / CFG.TPS;
+      fx.alpha = fx.life / fx.maxLife;
+      
+      if (fx.type === 'ring' || fx.type === 'explosion') {
+        fx.radius += 80 / CFG.TPS;
+      } else if (fx.type === 'text') {
+        fx.y -= 30 / CFG.TPS;
+      }
+      
+      if (fx.life <= 0) {
+        board.effects.splice(i, 1);
+      }
+    }
+  }
+  
+  checkWaveEnd() {
+    const b1 = this.boards.blue;
+    const b2 = this.boards.red;
+    
+    const spawnsComplete = b1.spawnIndex >= b1.spawnQueue.length && b2.spawnIndex >= b2.spawnQueue.length;
+    const noEnemies = b1.enemies.length === 0 && b2.enemies.length === 0;
+    
+    if (spawnsComplete && noEnemies) {
+      this.startBuild();
+    }
+  }
+  
+  // ============ AI ============
+  updateAI() {
+    if (this.tick % 20 !== 0) return;
+    
+    const board = this.boards.red;
+    const credits = this.players.red.credits;
+    
+    if (this.phase === 'build') {
+      // Try to place towers
+      const affordable = TOWER_LIST.filter(t => t.cost <= credits);
+      if (affordable.length > 0 && Math.random() < 0.4) {
+        const type = affordable[Math.floor(Math.random() * affordable.length)];
+        
+        for (let tries = 0; tries < 30; tries++) {
+          const x = 1 + Math.floor(Math.random() * (CFG.BOARD_W - 2));
+          const y = 1 + Math.floor(Math.random() * (CFG.BOARD_H - 2));
+          
+          if (board.grid[y][x] === 0) {
+            const path = this.findPath(board, board.spawn, board.exit, { x, y });
+            if (path) {
+              this.players.red.credits -= type.cost;
+              board.grid[y][x] = 1;
+              board.towers.push({
+                id: this.nextId++,
+                type,
+                gx: x, gy: y,
+                x: x * CFG.CELL + CFG.CELL / 2,
+                y: y * CFG.CELL + CFG.CELL / 2,
+                damage: type.dmg,
+                range: type.range,
+                cooldown: 0,
+                level: 1,
+                totalCost: type.cost,
+                owner: 'red',
+                angle: 0,
+                targetId: null
+              });
+              this.calcPath(board);
+              break;
+            }
+          }
+        }
+      }
+      
+      // Try to upgrade
+      if (board.towers.length > 0 && Math.random() < 0.3) {
+        const tower = board.towers[Math.floor(Math.random() * board.towers.length)];
+        if (tower.level < CFG.MAX_LEVEL) {
+          const cost = this.getUpgradeCost(tower);
+          if (this.players.red.credits >= cost) {
+            this.players.red.credits -= cost;
+            tower.level++;
+            tower.damage = Math.floor(tower.damage * 1.5);
+            tower.range = Math.floor(tower.range * 1.1);
+            tower.totalCost += cost;
+          }
+        }
+      }
+    }
+    
+    if (this.phase === 'combat') {
+      // Send enemies
+      if (credits > 80 && Math.random() < 0.08) {
+        const types = Object.keys(SEND_COSTS).filter(t => this.getSendCost(t) <= credits);
+        if (types.length > 0) {
+          const type = types[Math.floor(Math.random() * types.length)];
+          this.players.red.credits -= this.getSendCost(type);
+          const targetBoard = this.boards.blue;
+          this.spawnEnemy(targetBoard, type, 'red', true);
+        }
+      }
+    }
+  }
+  
+  // ============ UI UPDATES ============
+  updateUI() {
+    document.getElementById('blueLives').textContent = this.players.blue.lives;
+    document.getElementById('blueCredits').textContent = this.players.blue.credits;
+    document.getElementById('blueKills').textContent = this.players.blue.kills;
+    document.getElementById('redLives').textContent = this.players.red.lives;
+    document.getElementById('redCredits').textContent = this.players.red.credits;
+    document.getElementById('redKills').textContent = this.players.red.kills;
+    
+    let phaseText = 'MENU';
+    if (this.phase === 'build') phaseText = '🔧 BUILD PHASE';
+    else if (this.phase === 'combat') phaseText = '⚔️ COMBAT';
+    document.getElementById('phaseText').textContent = phaseText;
+    document.getElementById('waveText').textContent = 'Wave ' + this.wave;
+    
+    if (this.phase === 'build' && this.buildTimer > 0) {
+      document.getElementById('timerText').textContent = Math.ceil(this.buildTimer / CFG.TPS) + 's';
+    } else if (this.buildTimer < 0) {
+      document.getElementById('timerText').textContent = '∞';
+    } else {
+      document.getElementById('timerText').textContent = '--';
+    }
+    
+    let modeText = '';
+    if (this.mode === 'single') modeText = 'Single Player';
+    else if (this.mode === 'sandbox') modeText = 'Sandbox';
+    else if (this.mode === 'local') modeText = `Local (${this.currentPlayer.toUpperCase()})`;
+    else if (this.mode === 'online') modeText = 'Online';
+    if (this.speedMult > 1) modeText += ' • FAST';
+    if (this.hardMode) modeText += ' • HARD';
+    document.getElementById('modeText').textContent = modeText;
+    
+    // Launch button
+    document.getElementById('launchBtn').style.display = this.phase === 'build' ? 'block' : 'none';
+    
+    // Tower buttons
+    const player = this.getActivePlayer();
+    const credits = this.players[player].credits;
+    for (const t of TOWER_LIST) {
+      const btn = document.getElementById('tbtn-' + t.id);
+      if (btn) {
+        btn.classList.toggle('disabled', credits < t.cost);
+      }
+    }
+    
+    // Send options
+    for (const [id, base] of Object.entries(SEND_COSTS)) {
+      const cost = this.getSendCost(id);
+      const el = document.querySelector(`.sopt[data-type="${id}"]`);
+      if (el) {
+        el.querySelector('.scost').textContent = '$' + cost;
+        el.classList.toggle('disabled', credits < cost || (this.phase !== 'combat' && this.mode !== 'sandbox'));
+      }
+    }
+  }
+  
+  updateTowerInfo() {
+    if (!this.selectedTower) return;
+    const t = this.selectedTower;
+    document.getElementById('infoName').textContent = t.type.name + ' Lv.' + t.level;
+    document.getElementById('infoDmg').textContent = Math.floor(t.damage);
+    document.getElementById('infoRng').textContent = Math.floor(t.range);
+    document.getElementById('infoLvl').textContent = t.level + '/' + CFG.MAX_LEVEL;
+    document.getElementById('infoUpg').textContent = t.level < CFG.MAX_LEVEL ? '$' + this.getUpgradeCost(t) : 'MAX';
+    document.getElementById('infoSell').textContent = '$' + Math.floor(t.totalCost * 0.7);
+  }
+  
+  toggleSendPanel() {
+    if (this.phase !== 'combat' && this.mode !== 'sandbox') return;
+    document.getElementById('sendPanel').classList.toggle('show');
+  }
+  
+  toggleHelp() {
+    document.getElementById('helpOverlay').classList.toggle('show');
+  }
+  
+  // ============ RENDERING ============
+  render() {
+    const ctx = this.ctx;
+    ctx.clearRect(0, 0, CFG.WIDTH, CFG.HEIGHT);
+    
+    // Starfield background
+    ctx.drawImage(this.starfield, 0, 0);
+    
+    // Draw boards
+    this.renderBoard(this.boards.blue, CFG.OFFSET_X, CFG.OFFSET_Y);
+    this.renderBoard(this.boards.red, CFG.OFFSET_X + CFG.BOARD_PX_W + CFG.GAP, CFG.OFFSET_Y);
+    
+    // Gap area
+    const gapX = CFG.OFFSET_X + CFG.BOARD_PX_W;
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(gapX, CFG.OFFSET_Y, CFG.GAP, CFG.BOARD_PX_H);
+    
+    // Labels
+    ctx.font = 'bold 16px Segoe UI';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = COLORS.blue.pri;
+    ctx.fillText('BLUE', CFG.OFFSET_X + CFG.BOARD_PX_W / 2, CFG.OFFSET_Y - 8);
+    ctx.fillStyle = COLORS.red.pri;
+    ctx.fillText('RED', CFG.OFFSET_X + CFG.BOARD_PX_W + CFG.GAP + CFG.BOARD_PX_W / 2, CFG.OFFSET_Y - 8);
+    
+    // Dim inactive board in local mode
+    if (this.mode === 'local' && this.phase !== 'menu') {
+      const inactiveX = this.currentPlayer === 'blue' 
+        ? CFG.OFFSET_X + CFG.BOARD_PX_W + CFG.GAP 
+        : CFG.OFFSET_X;
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.fillRect(inactiveX, CFG.OFFSET_Y, CFG.BOARD_PX_W, CFG.BOARD_PX_H);
+    }
+  }
+  
+  renderBoard(board, ox, oy) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.translate(ox, oy);
+    
+    this.drawGrid(board);
+    this.drawPath(board);
+    this.drawHover(board);
+    this.drawTowers(board);
+    this.drawEnemies(board);
+    this.drawProjectiles(board);
+    this.drawEffects(board);
+    this.drawSelectedRange(board);
+    
+    ctx.restore();
+  }
+  
+  drawGrid(board) {
+    const ctx = this.ctx;
+    const w = CFG.BOARD_PX_W, h = CFG.BOARD_PX_H;
+    
+    // Background
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, '#0a1520');
+    grad.addColorStop(1, '#050a10');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+    
+    // Border
+    ctx.strokeStyle = COLORS[board.id].pri;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, w - 2, h - 2);
+    
+    // Cells
+    for (let y = 0; y < CFG.BOARD_H; y++) {
+      for (let x = 0; x < CFG.BOARD_W; x++) {
+        const cell = board.grid[y][x];
+        const cx = x * CFG.CELL, cy = y * CFG.CELL;
+        
+        if (cell === 0) {
+          // Buildable
+          ctx.fillStyle = 'rgba(0,80,40,0.4)';
+          ctx.fillRect(cx + 2, cy + 2, CFG.CELL - 4, CFG.CELL - 4);
+          ctx.strokeStyle = 'rgba(0,200,100,0.3)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(cx + 2.5, cy + 2.5, CFG.CELL - 5, CFG.CELL - 5);
+        } else if (cell === 2) {
+          // Wall
+          ctx.fillStyle = 'rgba(20,30,50,0.8)';
+          ctx.fillRect(cx, cy, CFG.CELL, CFG.CELL);
+        }
+        
+        // Grid lines
+        ctx.strokeStyle = 'rgba(0,255,255,0.1)';
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(cx, cy, CFG.CELL, CFG.CELL);
+      }
+    }
+    
+    // Spawn point
+    const sp = board.spawn;
+    const attacker = board.id === 'blue' ? 'red' : 'blue';
+    ctx.fillStyle = COLORS[attacker].glow;
+    ctx.fillRect(sp.x * CFG.CELL + 4, sp.y * CFG.CELL + 4, CFG.CELL - 8, CFG.CELL - 8);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('IN', sp.x * CFG.CELL + CFG.CELL/2, sp.y * CFG.CELL + CFG.CELL/2 + 4);
+    
+    // Exit point
+    const ex = board.exit;
+    ctx.fillStyle = COLORS[board.id].glow;
+    ctx.fillRect(ex.x * CFG.CELL + 4, ex.y * CFG.CELL + 4, CFG.CELL - 8, CFG.CELL - 8);
+    ctx.strokeStyle = COLORS[board.id].pri;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(ex.x * CFG.CELL + 4, ex.y * CFG.CELL + 4, CFG.CELL - 8, CFG.CELL - 8);
+    ctx.fillStyle = '#fff';
+    ctx.fillText('EXIT', ex.x * CFG.CELL + CFG.CELL/2, ex.y * CFG.CELL + CFG.CELL/2 + 4);
+  }
+  
+  drawPath(board) {
+    const path = board.pathCache;
+    if (!path || path.length < 2) return;
+    
+    const ctx = this.ctx;
+    const attacker = board.id === 'blue' ? 'red' : 'blue';
+    
+    ctx.strokeStyle = COLORS[attacker].path;
+    ctx.lineWidth = 6;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(path[0].x, path[0].y);
+    for (let i = 1; i < path.length; i++) {
+      ctx.lineTo(path[i].x, path[i].y);
+    }
+    ctx.stroke();
+  }
+  
+  drawHover(board) {
+    if (!this.hoverCell || this.hoverCell.board !== board.id) return;
+    if (!this.canControlBoard(board.id)) return;
+    
+    const { gx, gy } = this.hoverCell;
+    const ctx = this.ctx;
+    const x = gx * CFG.CELL, y = gy * CFG.CELL;
+    
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x + 1, y + 1, CFG.CELL - 2, CFG.CELL - 2);
+    
+    // Tower preview
+    if (this.selectedType && board.grid[gy] && board.grid[gy][gx] === 0) {
+      const type = TOWERS[this.selectedType];
+      const testPath = this.findPath(board, board.spawn, board.exit, { x: gx, y: gy });
+      const canPlace = !!testPath;
+      
+      const cx = x + CFG.CELL / 2, cy = y + CFG.CELL / 2;
+      
+      // Range preview
+      ctx.fillStyle = canPlace ? 'rgba(0,255,100,0.1)' : 'rgba(255,0,0,0.1)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, type.range, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = canPlace ? 'rgba(0,255,100,0.5)' : 'rgba(255,0,0,0.5)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
+      // Tower preview
+      ctx.fillStyle = canPlace ? type.color + 'aa' : '#f44a';
+      ctx.fillRect(x + 6, y + 6, CFG.CELL - 12, CFG.CELL - 12);
+    }
+  }
+  
+  drawTowers(board) {
+    const ctx = this.ctx;
+    
+    for (const tower of board.towers) {
+      const { x, y, type, level, angle, targetId } = tower;
+      const size = CFG.CELL - 10;
+      
+      // Glow
+      ctx.shadowColor = type.color;
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = type.color;
+      
+      // Tower shape based on type
+      if (type.beam) {
+        ctx.beginPath();
+        ctx.arc(x, y, size / 2, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (type.chain) {
+        // Hexagon for Tesla
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+          const px = x + Math.cos(a) * size / 2;
+          const py = y + Math.sin(a) * size / 2;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+      } else if (type.antiAir) {
+        // Triangle for Flak
+        ctx.beginPath();
+        ctx.moveTo(x, y - size / 2);
+        ctx.lineTo(x + size / 2, y + size / 2);
+        ctx.lineTo(x - size / 2, y + size / 2);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        ctx.fillRect(x - size / 2, y - size / 2, size, size);
+      }
+      
+      ctx.shadowBlur = 0;
+      
+      // Turret direction
+      if (targetId !== null) {
+        ctx.strokeStyle = type.proj;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.cos(angle) * size / 2, y + Math.sin(angle) * size / 2);
+        ctx.stroke();
+        
+        // Beam effect
+        if (type.beam) {
+          const target = board.enemies.find(e => e.id === targetId);
+          if (target) {
+            ctx.strokeStyle = type.proj;
+            ctx.lineWidth = 3;
+            ctx.globalAlpha = 0.6 + Math.random() * 0.2;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(target.x, target.y);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
+        }
+      }
+      
+      // Level indicator
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 11px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(level, x, y + 4);
+      
+      // Owner indicator
+      ctx.strokeStyle = COLORS[tower.owner].pri;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, size / 2 + 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  
+  drawEnemies(board) {
+    const ctx = this.ctx;
+    
+    for (const enemy of board.enemies) {
+      const { x, y, type, hp, maxHp, owner, flying, slowUntil } = enemy;
+      const size = type.id === 'BOSS' ? 16 : type.id === 'SWARM' ? 8 : 10;
+      const color = type.color;
+      
+      ctx.shadowColor = COLORS[owner].pri;
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = color;
+      
+      if (flying) {
+        // Triangle for flyers
+        ctx.beginPath();
+        ctx.moveTo(x, y - size);
+        ctx.lineTo(x - size, y + size);
+        ctx.lineTo(x + size, y + size);
+        ctx.closePath();
+        ctx.fill();
+      } else if (type.id === 'BOSS') {
+        // Diamond for boss
+        ctx.beginPath();
+        ctx.moveTo(x, y - size);
+        ctx.lineTo(x + size, y);
+        ctx.lineTo(x, y + size);
+        ctx.lineTo(x - size, y);
+        ctx.closePath();
+        ctx.fill();
+      } else if (type.heals) {
+        // Cross for healer
+        ctx.fillRect(x - size/3, y - size, size*2/3, size*2);
+        ctx.fillRect(x - size, y - size/3, size*2, size*2/3);
+      } else {
+        // Circle for others
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      ctx.shadowBlur = 0;
+      
+      // Health bar
+      const hpPct = hp / maxHp;
+      const barW = 24, barH = 4;
+      ctx.fillStyle = '#222';
+      ctx.fillRect(x - barW/2, y - size - 10, barW, barH);
+      ctx.fillStyle = hpPct > 0.5 ? '#0f0' : hpPct > 0.25 ? '#ff0' : '#f00';
+      ctx.fillRect(x - barW/2, y - size - 10, barW * hpPct, barH);
+      
+      // Slow effect
+      if (slowUntil > this.tick) {
+        ctx.strokeStyle = '#4df';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x, y, size + 5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      
+      // Owner ring
+      ctx.strokeStyle = COLORS[owner].pri;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(x, y, size + 2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  
+  drawProjectiles(board) {
+    const ctx = this.ctx;
+    
+    for (const proj of board.projectiles) {
+      ctx.shadowColor = proj.color;
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = proj.color;
+      ctx.beginPath();
+      ctx.arc(proj.x, proj.y, proj.aoe > 0 ? 6 : 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+  }
+  
+  drawEffects(board) {
+    const ctx = this.ctx;
+    
+    for (const fx of board.effects) {
+      ctx.globalAlpha = fx.alpha;
+      
+      if (fx.type === 'ring' || fx.type === 'explosion') {
+        ctx.strokeStyle = fx.color;
+        ctx.lineWidth = fx.type === 'explosion' ? 4 : 2;
+        ctx.beginPath();
+        ctx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (fx.type === 'text') {
+        ctx.fillStyle = fx.color;
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(fx.text, fx.x, fx.y);
+      } else if (fx.type === 'lightning') {
+        ctx.fillStyle = fx.color;
+        ctx.beginPath();
+        ctx.arc(fx.x, fx.y, 10 * fx.alpha, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      ctx.globalAlpha = 1;
+    }
+  }
+  
+  drawSelectedRange(board) {
+    if (!this.selectedTower || this.selectedTower.owner !== board.id) return;
+    
+    const ctx = this.ctx;
+    const t = this.selectedTower;
+    
+    ctx.strokeStyle = 'rgba(255,255,0,0.6)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, t.range, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  
+  // ============ NETWORKING ============
+  showConnect() {
+    document.getElementById('connectOverlay').classList.add('show');
+  }
+  
+  hideConnect() {
+    document.getElementById('connectOverlay').classList.remove('show');
+  }
+  
+  switchConnectTab(tab) {
+    document.getElementById('hostTabBtn').classList.toggle('active', tab === 'host');
+    document.getElementById('joinTabBtn').classList.toggle('active', tab === 'join');
+    document.getElementById('hostTab').classList.toggle('active', tab === 'host');
+    document.getElementById('joinTab').classList.toggle('active', tab === 'join');
+  }
+  
+  async createOffer() {
+    try {
+      this.net.role = 'host';
+      this.net.pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      
+      this.net.dc = this.net.pc.createDataChannel('starland');
+      this.setupDataChannel(this.net.dc);
+      
+      this.net.pc.oniceconnectionstatechange = () => {
+        document.getElementById('hostStatus').textContent = 'Status: ' + this.net.pc.iceConnectionState;
+      };
+      
+      const offer = await this.net.pc.createOffer();
+      await this.net.pc.setLocalDescription(offer);
+      await this.waitForICE(this.net.pc);
+      
+      document.getElementById('offerOut').value = btoa(JSON.stringify(this.net.pc.localDescription));
+      document.getElementById('hostStatus').textContent = 'Status: Offer created - share with friend';
+    } catch (e) {
+      console.error('Create offer error:', e);
+      document.getElementById('hostStatus').textContent = 'Error: ' + e.message;
+    }
+  }
+  
+  async acceptAnswer() {
+    try {
+      const answerStr = document.getElementById('answerIn').value.trim();
+      if (!answerStr) return;
+      
+      const answer = JSON.parse(atob(answerStr));
+      await this.net.pc.setRemoteDescription(answer);
+      document.getElementById('hostStatus').textContent = 'Status: Connected!';
+      document.getElementById('startOnlineBtn').disabled = false;
+    } catch (e) {
+      console.error('Accept answer error:', e);
+      document.getElementById('hostStatus').textContent = 'Error: ' + e.message;
+    }
+  }
+  
+  async createAnswer() {
+    try {
+      this.net.role = 'client';
+      this.net.pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      
+      this.net.pc.ondatachannel = e => {
+        this.net.dc = e.channel;
+        this.setupDataChannel(this.net.dc);
+      };
+      
+      this.net.pc.oniceconnectionstatechange = () => {
+        document.getElementById('joinStatus').textContent = 'Status: ' + this.net.pc.iceConnectionState;
+      };
+      
+      const offerStr = document.getElementById('offerIn').value.trim();
+      if (!offerStr) return;
+      
+      const offer = JSON.parse(atob(offerStr));
+      await this.net.pc.setRemoteDescription(offer);
+      
+      const answer = await this.net.pc.createAnswer();
+      await this.net.pc.setLocalDescription(answer);
+      await this.waitForICE(this.net.pc);
+      
+      document.getElementById('answerOut').value = btoa(JSON.stringify(this.net.pc.localDescription));
+      document.getElementById('joinStatus').textContent = 'Status: Answer created - share with host';
+    } catch (e) {
+      console.error('Create answer error:', e);
+      document.getElementById('joinStatus').textContent = 'Error: ' + e.message;
+    }
+  }
+  
+  setupDataChannel(dc) {
+    dc.onopen = () => {
+      this.net.connected = true;
+      this.net.on = true;
+      document.getElementById('chatBox').classList.add('show');
+      
+      if (this.net.role === 'host') {
+        document.getElementById('startOnlineBtn').disabled = false;
+      }
+    };
+    
+    dc.onclose = () => {
+      this.net.connected = false;
+    };
+    
+    dc.onmessage = e => {
+      const msg = JSON.parse(e.data);
+      this.handleNetMsg(msg);
+    };
+  }
+  
+  async waitForICE(pc) {
+    if (pc.iceGatheringState === 'complete') return;
+    return new Promise(resolve => {
+      const check = () => {
+        if (pc.iceGatheringState === 'complete') {
+          pc.removeEventListener('icegatheringstatechange', check);
+          resolve();
+        }
+      };
+      pc.addEventListener('icegatheringstatechange', check);
+      setTimeout(resolve, 3000);
+    });
+  }
+  
+  startOnlineGame() {
+    if (!this.net.connected) return;
+    
+    const seed = Math.floor(Math.random() * 0xFFFFFFFF);
+    this.sendNetMsg({ type: 'start', seed, fast: document.getElementById('fastCheck').checked, hard: document.getElementById('hardCheck').checked });
+    
+    this.beginOnlineGame(seed, 'blue');
+  }
+  
+  beginOnlineGame(seed, player) {
+    this.mode = 'online';
+    this.localPlayer = player;
+    this.startGame('online');
+    this.hideConnect();
+    document.getElementById('chatBox').classList.add('show');
+  }
+  
+  sendNetMsg(msg) {
+    if (this.net.connected && this.net.dc && this.net.dc.readyState === 'open') {
+      this.net.dc.send(JSON.stringify(msg));
+    }
+  }
+  
+  handleNetMsg(msg) {
+    switch (msg.type) {
+      case 'start':
+        this.beginOnlineGame(msg.seed, 'red');
+        break;
+      case 'place':
+        this.placeTower(msg.boardId, msg.typeId, msg.gx, msg.gy);
+        break;
+      case 'upgrade':
+        // Find tower and upgrade
+        break;
+      case 'sell':
+        // Find tower and sell
+        break;
+      case 'send':
+        this.spawnEnemy(this.boards[msg.player === 'blue' ? 'red' : 'blue'], msg.typeId, msg.player, true);
+        break;
+      case 'chat':
+        this.addChatMsg(msg.sender, msg.text);
+        break;
+    }
+  }
+  
+  sendChatMsg(text) {
+    const sender = this.localPlayer.toUpperCase();
+    this.addChatMsg(sender, text);
+    this.sendNetMsg({ type: 'chat', sender, text });
+  }
+  
+  addChatMsg(sender, text) {
+    const log = document.getElementById('chatLog');
+    const div = document.createElement('div');
+    div.textContent = sender + ': ' + text;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+  }
+}
+
+// Start game when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => new Game());
+} else {
+  new Game();
+}
+
+})();
+</script>
+
+
+</body></html>
