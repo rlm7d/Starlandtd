@@ -103,6 +103,20 @@ body{font-family:'Segoe UI',system-ui,sans-serif;color:#fff}
 #helpContent .key{color:var(--gold);font-family:monospace;font-weight:600}
 #helpContent h3{color:#8cf;margin:16px 0 8px;font-size:13px}
 
+/* Roguelike relic overlay */
+#relicOverlay{position:fixed;inset:0;background:radial-gradient(circle at center,rgba(10,20,40,.95) 0%,rgba(0,0,0,.98) 100%);display:none;justify-content:center;align-items:center;z-index:160}
+#relicOverlay.show{display:flex}
+#relicContent{background:var(--panel);border:2px solid var(--gold);border-radius:14px;padding:22px;max-width:760px;width:92%;text-align:center;box-shadow:0 0 30px rgba(255,221,0,.15)}
+#relicContent h2{color:var(--gold);margin-bottom:6px;font-size:22px}
+#relicContent p{color:#9ab;font-size:12px;margin-bottom:12px}
+#relicMeta{font-size:11px;color:#667;margin-bottom:14px}
+#relicChoices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.relic-card{background:rgba(20,40,60,.8);border:1px solid rgba(255,221,0,.35);border-radius:10px;padding:12px;cursor:pointer;transition:transform .15s,box-shadow .15s,border-color .15s;min-height:120px;display:flex;flex-direction:column;justify-content:center}
+.relic-card:hover{transform:translateY(-4px);border-color:var(--gold);box-shadow:0 0 18px rgba(255,221,0,.3)}
+.relic-card h4{color:#fff;margin-bottom:6px;font-size:14px}
+.relic-card span{color:#9ad;font-size:11px;line-height:1.4}
+.relic-card .tag{margin-top:8px;font-size:10px;color:#6ad;text-transform:uppercase;letter-spacing:.08em}
+
 /* Chat for multiplayer */
 #chatBox{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);width:300px;display:none;z-index:15;pointer-events:auto}
 #chatBox.show{display:block}
@@ -170,7 +184,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;color:#fff}
 <div id="menuOverlay">
   <h1>⭐ STARLAND TD ⭐</h1>
   <h2>Competitive Tower Defense</h2>
-  <button class="mbtn" id="singleBtn">🎮 Single Player<span class="sub">Battle against AI opponent</span></button>
+  <button class="mbtn" id="singleBtn">🎮 Single Player<span class="sub">Roguelike run vs AI with relic drafts</span></button>
   <button class="mbtn" id="sandboxBtn">🧪 Sandbox Mode<span class="sub">Unlimited credits, practice builds</span></button>
   <button class="mbtn" id="localBtn">👥 Local 2-Player<span class="sub">Hot-seat multiplayer (TAB to switch)</span></button>
   <button class="mbtn" id="onlineBtn">🌐 Online Multiplayer<span class="sub">P2P WebRTC connection</span></button>
@@ -240,6 +254,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;color:#fff}
       <tr><td style="color:#fff">Healer</td><td>Heals nearby enemies</td></tr>
       <tr><td style="color:#a0f">Splitter</td><td>Splits into 2 on death</td></tr>
     </tbody></table>
+    <h3>🃏 Roguelike Rewards (Single Player)</h3>
+    <p style="font-size:12px;color:#aaa;margin-bottom:12px">After each wave you draft 1 of 3 relics, inspired by Slay the Spire. Relics stack and permanently modify your towers, economy, or defenses for that run.</p>
     <h3>⌨️ Controls</h3>
     <table>
       <tbody><tr><td class="key">1-6</td><td>Select tower type</td></tr>
@@ -250,6 +266,15 @@ body{font-family:'Segoe UI',system-ui,sans-serif;color:#fff}
       <tr><td class="key">TAB</td><td>Switch player (Local mode)</td></tr>
     </tbody></table>
     <button class="abtn" id="closeHelpBtn" style="width:100%;margin-top:16px">Close</button>
+  </div>
+</div>
+
+<div id="relicOverlay">
+  <div id="relicContent">
+    <h2 id="relicTitle">Relic Draft</h2>
+    <p id="relicSubtitle">Choose one relic to shape your run.</p>
+    <div id="relicMeta"></div>
+    <div id="relicChoices"></div>
   </div>
 </div>
 
@@ -319,6 +344,18 @@ const ENEMIES = {
 };
 
 const SEND_COSTS = { BASIC:12, FAST:18, TANK:45, SWARM:8, FLYER:55, HEALER:40, SPLITTER:35 };
+
+// ============ ROGUELIKE RELICS ============
+const ROGUE_RELICS = [
+  { id:'STAR_CHART', name:'Star Chart', desc:'+25 credits at the start of each wave.', tag:'Economy', effect:{ waveBonus:25 } },
+  { id:'ARC_REACTOR', name:'Arc Reactor', desc:'+12% tower damage.', tag:'Damage', effect:{ damageMult:1.12 } },
+  { id:'ORBITAL_LENS', name:'Orbital Lens', desc:'+12% tower range.', tag:'Range', effect:{ rangeMult:1.12 } },
+  { id:'SURGE_CAPS', name:'Surge Capacitors', desc:'Towers fire 10% faster.', tag:'Speed', effect:{ cooldownMult:0.9 } },
+  { id:'CRYO_COIL', name:'Cryo Coil', desc:'+25% slow power.', tag:'Control', effect:{ slowMult:1.25 } },
+  { id:'SCAVENGER', name:'Scavenger Drones', desc:'+15% bounty credits.', tag:'Economy', effect:{ bountyMult:1.15 } },
+  { id:'FORGE_COUPON', name:'Forge Coupon', desc:'Towers and upgrades cost 10% less.', tag:'Economy', effect:{ costMult:0.9 } },
+  { id:'REINFORCED_HULL', name:'Reinforced Hull', desc:'Gain +3 lives immediately.', tag:'Defense', effect:{ lives:3 } }
+];
 
 // ============ WAVE DEFINITIONS ============
 function generateWave(waveNum, boardId) {
@@ -423,12 +460,27 @@ class Game {
     
     // State
     this.mode = 'menu'; // menu, single, sandbox, local, online
-    this.phase = 'menu'; // menu, build, combat, gameover
+    this.phase = 'menu'; // menu, build, combat, relic, gameover
     this.wave = 1;
     this.tick = 0;
     this.buildTimer = 0;
     this.speedMult = 1;
     this.hardMode = false;
+    this.rogue = {
+      seed: 0,
+      rng: null,
+      relics: [],
+      pending: null
+    };
+    this.runModifiers = {
+      damageMult: 1,
+      rangeMult: 1,
+      cooldownMult: 1,
+      slowMult: 1,
+      bountyMult: 1,
+      waveBonus: 0,
+      costMult: 1
+    };
     
     // Players
     this.localPlayer = 'blue';
@@ -680,7 +732,7 @@ class Game {
   }
   
   onClick(e) {
-    if (this.phase === 'menu' || this.phase === 'gameover') return;
+    if (this.phase === 'menu' || this.phase === 'gameover' || this.phase === 'relic') return;
     this.sound.init();
     
     const pos = this.getCanvasPos(e);
@@ -710,6 +762,7 @@ class Game {
   }
   
   onMouseMove(e) {
+    if (this.phase === 'relic') { this.hoverCell = null; return; }
     const pos = this.getCanvasPos(e);
     const hit = this.getBoardAt(pos.x, pos.y);
     if (!hit) { this.hoverCell = null; return; }
@@ -723,7 +776,7 @@ class Game {
   }
   
   onKeyDown(e) {
-    if (this.phase === 'menu' || this.phase === 'gameover') return;
+    if (this.phase === 'menu' || this.phase === 'gameover' || this.phase === 'relic') return;
     if (document.activeElement.tagName === 'INPUT') return;
     
     const key = e.key.toLowerCase();
@@ -764,10 +817,8 @@ class Game {
   // ============ GAME CONTROL ============
   startGame(mode) {
     this.mode = mode;
-    this.phase = 'build';
     this.wave = 1;
     this.tick = 0;
-    this.buildTimer = CFG.BUILD_TIME * CFG.TPS;
     this.speedMult = document.getElementById('fastCheck').checked ? 1.5 : 1;
     this.hardMode = document.getElementById('hardCheck').checked;
     
@@ -778,7 +829,6 @@ class Game {
     if (mode === 'sandbox') {
       this.players.blue.credits = 99999;
       this.players.red.credits = 99999;
-      this.buildTimer = -1; // Infinite build time
     }
     
     this.localPlayer = 'blue';
@@ -793,8 +843,18 @@ class Game {
     
     document.getElementById('menuOverlay').classList.add('hidden');
     document.getElementById('gameOverOverlay').classList.remove('show');
-    
-    this.updateUI();
+    document.getElementById('relicOverlay').classList.remove('show');
+
+    if (mode === 'single') {
+      this.resetRoguelike();
+      this.startRoguelikeDraft({
+        title: 'Starting Relic',
+        subtitle: 'Choose one relic to define your run.',
+        onComplete: () => this.enterBuildPhase(false)
+      });
+    } else {
+      this.enterBuildPhase(false);
+    }
   }
   
   returnToMenu() {
@@ -802,6 +862,7 @@ class Game {
     this.mode = 'menu';
     document.getElementById('menuOverlay').classList.remove('hidden');
     document.getElementById('gameOverOverlay').classList.remove('show');
+    document.getElementById('relicOverlay').classList.remove('show');
   }
   
   launchWave() {
@@ -825,15 +886,23 @@ class Game {
     this.updateUI();
   }
   
-  startBuild() {
+  enterBuildPhase(advanceWave = true) {
     this.phase = 'build';
-    this.wave++;
+    if (advanceWave) {
+      this.wave++;
+    }
     this.buildTimer = this.mode === 'sandbox' ? -1 : CFG.BUILD_TIME * CFG.TPS;
     
-    // Wave bonus
-    const bonus = CFG.WAVE_BONUS + this.wave * 5;
-    this.players.blue.credits += bonus;
-    this.players.red.credits += bonus;
+    if (advanceWave) {
+      const baseBonus = CFG.WAVE_BONUS + this.wave * 5;
+      if (this.mode === 'single') {
+        this.players.blue.credits += baseBonus + this.runModifiers.waveBonus;
+        this.players.red.credits += baseBonus;
+      } else {
+        this.players.blue.credits += baseBonus;
+        this.players.red.credits += baseBonus;
+      }
+    }
     
     this.updateUI();
   }
@@ -846,6 +915,109 @@ class Game {
     overlay.classList.add(winner);
     document.getElementById('winnerText').textContent = winner.toUpperCase() + ' WINS!';
     document.getElementById('goStats').textContent = `Waves: ${this.wave} | Blue Kills: ${this.players.blue.kills} | Red Kills: ${this.players.red.kills}`;
+  }
+
+  // ============ ROGUELIKE ============
+  resetRoguelike() {
+    const seed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
+    this.rogue = {
+      seed,
+      rng: new RNG(seed),
+      relics: [],
+      pending: null
+    };
+    this.runModifiers = {
+      damageMult: 1,
+      rangeMult: 1,
+      cooldownMult: 1,
+      slowMult: 1,
+      bountyMult: 1,
+      waveBonus: 0,
+      costMult: 1
+    };
+  }
+
+  startRoguelikeDraft({ title, subtitle, onComplete }) {
+    this.phase = 'relic';
+    this.rogue.pending = { onComplete };
+    const overlay = document.getElementById('relicOverlay');
+    overlay.classList.add('show');
+    document.getElementById('sendPanel').classList.remove('show');
+    document.getElementById('helpOverlay').classList.remove('show');
+    document.getElementById('infoPanel').classList.remove('show');
+    document.getElementById('relicTitle').textContent = title;
+    document.getElementById('relicSubtitle').textContent = subtitle;
+    document.getElementById('relicMeta').textContent = `Run Seed: ${this.rogue.seed} • Relics: ${this.rogue.relics.length}`;
+    this.renderRelicChoices();
+    this.updateUI();
+  }
+
+  renderRelicChoices() {
+    const container = document.getElementById('relicChoices');
+    container.innerHTML = '';
+    const picks = this.getRelicChoices(3);
+    for (const relic of picks) {
+      const card = document.createElement('div');
+      card.className = 'relic-card';
+      card.innerHTML = `<h4>${relic.name}</h4><span>${relic.desc}</span><div class="tag">${relic.tag}</div>`;
+      card.addEventListener('click', () => this.chooseRelic(relic.id));
+      container.appendChild(card);
+    }
+  }
+
+  getRelicChoices(count) {
+    const rng = this.rogue.rng || new RNG(Date.now());
+    const available = ROGUE_RELICS.filter(r => !this.rogue.relics.includes(r.id));
+    const pool = available.length >= count ? available : ROGUE_RELICS;
+    const picks = [];
+    const used = new Set();
+    while (picks.length < count && used.size < pool.length) {
+      const relic = pool[rng.nextInt(pool.length)];
+      if (used.has(relic.id)) continue;
+      used.add(relic.id);
+      picks.push(relic);
+    }
+    return picks;
+  }
+
+  chooseRelic(relicId) {
+    const relic = ROGUE_RELICS.find(r => r.id === relicId);
+    if (!relic) return;
+    this.applyRelic(relic);
+    document.getElementById('relicOverlay').classList.remove('show');
+    const pending = this.rogue.pending;
+    this.rogue.pending = null;
+    if (pending && typeof pending.onComplete === 'function') {
+      pending.onComplete();
+    } else {
+      this.enterBuildPhase(false);
+    }
+  }
+
+  applyRelic(relic) {
+    if (!this.rogue.relics.includes(relic.id)) {
+      this.rogue.relics.push(relic.id);
+    }
+    const effect = relic.effect || {};
+    if (effect.waveBonus) this.runModifiers.waveBonus += effect.waveBonus;
+    if (effect.damageMult) this.runModifiers.damageMult *= effect.damageMult;
+    if (effect.rangeMult) this.runModifiers.rangeMult *= effect.rangeMult;
+    if (effect.cooldownMult) this.runModifiers.cooldownMult *= effect.cooldownMult;
+    if (effect.slowMult) this.runModifiers.slowMult *= effect.slowMult;
+    if (effect.bountyMult) this.runModifiers.bountyMult *= effect.bountyMult;
+    if (effect.costMult) this.runModifiers.costMult *= effect.costMult;
+    if (effect.lives) this.players.blue.lives += effect.lives;
+    this.refreshPlayerTowers('blue');
+    this.updateTowerInfo();
+    this.updateUI();
+  }
+
+  refreshPlayerTowers(playerId) {
+    const board = this.boards[playerId];
+    if (!board) return;
+    for (const tower of board.towers) {
+      this.applyTowerModifiers(tower);
+    }
   }
   
   // ============ GAME LOGIC ============
@@ -860,6 +1032,67 @@ class Game {
     if (this.mode === 'online') return this.localPlayer;
     return 'blue';
   }
+
+  getRunModifiersForOwner(owner) {
+    if (this.mode === 'single' && owner === 'blue') return this.runModifiers;
+    return {
+      damageMult: 1,
+      rangeMult: 1,
+      cooldownMult: 1,
+      slowMult: 1,
+      bountyMult: 1,
+      waveBonus: 0,
+      costMult: 1
+    };
+  }
+
+  getCostMult(owner) {
+    return this.getRunModifiersForOwner(owner).costMult;
+  }
+
+  getTowerCost(type, owner) {
+    return Math.floor(type.cost * this.getCostMult(owner));
+  }
+
+  applyTowerModifiers(tower) {
+    const mods = this.getRunModifiersForOwner(tower.owner);
+    tower.damage = Math.floor(tower.baseDamage * mods.damageMult);
+    tower.range = Math.floor(tower.baseRange * mods.rangeMult);
+    tower.cdTicks = tower.type.beam ? 0 : Math.max(1, Math.floor(tower.baseCdTicks * mods.cooldownMult));
+  }
+
+  createTower(type, gx, gy, owner, cost) {
+    const finalCost = typeof cost === 'number' ? cost : type.cost;
+    const tower = {
+      id: this.nextId++,
+      type,
+      gx, gy,
+      x: gx * CFG.CELL + CFG.CELL / 2,
+      y: gy * CFG.CELL + CFG.CELL / 2,
+      baseDamage: type.dmg,
+      baseRange: type.range,
+      baseCdTicks: type.cdTicks,
+      damage: type.dmg,
+      range: type.range,
+      cdTicks: type.cdTicks,
+      cooldown: 0,
+      level: 1,
+      totalCost: finalCost,
+      owner,
+      angle: 0,
+      targetId: null
+    };
+    this.applyTowerModifiers(tower);
+    return tower;
+  }
+
+  applyTowerUpgrade(tower, cost) {
+    tower.level++;
+    tower.baseDamage = Math.floor(tower.baseDamage * 1.5);
+    tower.baseRange = Math.floor(tower.baseRange * 1.1);
+    tower.totalCost += cost;
+    this.applyTowerModifiers(tower);
+  }
   
   selectTowerType(typeId) {
     if (this.phase !== 'build' && this.mode !== 'sandbox') return;
@@ -867,7 +1100,8 @@ class Game {
     if (!type) return;
     
     const player = this.getActivePlayer();
-    if (this.players[player].credits < type.cost) return;
+    const cost = this.getTowerCost(type, player);
+    if (this.players[player].credits < cost) return;
     
     this.selectedType = typeId;
     this.selectedTower = null;
@@ -902,7 +1136,8 @@ class Game {
     const player = boardId;
     
     if (!type || !board.grid[gy] || board.grid[gy][gx] !== 0) return false;
-    if (this.players[player].credits < type.cost) return false;
+    const cost = this.getTowerCost(type, player);
+    if (this.players[player].credits < cost) return false;
     
     // Check path still exists
     const testPath = this.findPath(board, board.spawn, board.exit, { x: gx, y: gy });
@@ -911,24 +1146,10 @@ class Game {
       return false;
     }
     
-    this.players[player].credits -= type.cost;
+    this.players[player].credits -= cost;
     board.grid[gy][gx] = 1;
     
-    const tower = {
-      id: this.nextId++,
-      type,
-      gx, gy,
-      x: gx * CFG.CELL + CFG.CELL / 2,
-      y: gy * CFG.CELL + CFG.CELL / 2,
-      damage: type.dmg,
-      range: type.range,
-      cooldown: 0,
-      level: 1,
-      totalCost: type.cost,
-      owner: player,
-      angle: 0,
-      targetId: null
-    };
+    const tower = this.createTower(type, gx, gy, player, cost);
     
     board.towers.push(tower);
     this.calcPath(board);
@@ -956,10 +1177,7 @@ class Game {
     if (this.players[player].credits < cost) return;
     
     this.players[player].credits -= cost;
-    tower.level++;
-    tower.damage = Math.floor(tower.damage * 1.5);
-    tower.range = Math.floor(tower.range * 1.1);
-    tower.totalCost += cost;
+    this.applyTowerUpgrade(tower, cost);
     
     this.addEffect(board, tower.x, tower.y, '#ff0', 'ring');
     this.sound.play('upgrade');
@@ -994,7 +1212,7 @@ class Game {
   }
   
   getUpgradeCost(tower) {
-    return Math.floor(tower.type.cost * Math.pow(1.8, tower.level));
+    return Math.floor(tower.type.cost * Math.pow(1.8, tower.level) * this.getCostMult(tower.owner));
   }
   
   sendEnemy(typeId) {
@@ -1186,13 +1404,15 @@ class Game {
       
       // Fire
       if (target) {
-        tower.cooldown = tower.type.cdTicks;
+        tower.cooldown = tower.cdTicks;
         
         if (tower.type.chain > 0) {
           // Chain lightning
           this.chainLightning(board, tower, target);
         } else {
           // Regular projectile
+          const slowMult = this.getRunModifiersForOwner(tower.owner).slowMult;
+          const slow = tower.type.slow ? Math.min(0.9, tower.type.slow * slowMult) : 0;
           board.projectiles.push({
             id: this.nextId++,
             x: tower.x,
@@ -1204,7 +1424,7 @@ class Game {
             damage: tower.damage,
             color: tower.type.proj,
             aoe: tower.type.aoe,
-            slow: tower.type.slow || 0,
+            slow,
             slowDur: tower.type.slowDur || 0,
             owner: tower.owner
           });
@@ -1352,7 +1572,10 @@ class Game {
       // Check death
       if (enemy.hp <= 0) {
         const defender = board.id;
-        const bounty = Math.floor(enemy.value * (enemy.sent ? 1.5 : 1));
+        let bounty = Math.floor(enemy.value * (enemy.sent ? 1.5 : 1));
+        if (this.mode === 'single' && defender === 'blue') {
+          bounty = Math.floor(bounty * this.runModifiers.bountyMult);
+        }
         this.players[defender].credits += bounty;
         this.players[defender].kills++;
         
@@ -1468,7 +1691,15 @@ class Game {
     const noEnemies = b1.enemies.length === 0 && b2.enemies.length === 0;
     
     if (spawnsComplete && noEnemies) {
-      this.startBuild();
+      if (this.mode === 'single') {
+        this.startRoguelikeDraft({
+          title: `Wave ${this.wave} cleared`,
+          subtitle: 'Choose a relic for the next wave.',
+          onComplete: () => this.enterBuildPhase(true)
+        });
+      } else {
+        this.enterBuildPhase(true);
+      }
     }
   }
   
@@ -1543,7 +1774,7 @@ class Game {
       if (this.ai.upgradeCooldown > 0) this.ai.upgradeCooldown--;
       
       // Try to place towers intelligently near the path
-      const affordable = TOWER_LIST.filter(t => t.cost <= credits);
+        const affordable = TOWER_LIST.filter(t => this.getTowerCost(t, 'red') <= credits);
       if (affordable.length > 0 && this.ai.buildCooldown === 0) {
         const pathPoints = this.getPathPoints(board);
         const maxRange = Math.max(...affordable.map(t => t.range));
@@ -1575,24 +1806,10 @@ class Game {
         }
         
         if (best.type) {
-          this.players.red.credits -= best.type.cost;
+          const cost = this.getTowerCost(best.type, 'red');
+          this.players.red.credits -= cost;
           board.grid[best.gy][best.gx] = 1;
-          board.towers.push({
-            id: this.nextId++,
-            type: best.type,
-            gx: best.gx,
-            gy: best.gy,
-            x: best.gx * CFG.CELL + CFG.CELL / 2,
-            y: best.gy * CFG.CELL + CFG.CELL / 2,
-            damage: best.type.dmg,
-            range: best.type.range,
-            cooldown: 0,
-            level: 1,
-            totalCost: best.type.cost,
-            owner: 'red',
-            angle: 0,
-            targetId: null
-          });
+          board.towers.push(this.createTower(best.type, best.gx, best.gy, 'red', cost));
           this.calcPath(board);
           this.ai.buildCooldown = 4;
         }
@@ -1615,10 +1832,7 @@ class Game {
           const cost = this.getUpgradeCost(bestTower);
           if (this.players.red.credits >= cost) {
             this.players.red.credits -= cost;
-            bestTower.level++;
-            bestTower.damage = Math.floor(bestTower.damage * 1.5);
-            bestTower.range = Math.floor(bestTower.range * 1.1);
-            bestTower.totalCost += cost;
+            this.applyTowerUpgrade(bestTower, cost);
             this.ai.upgradeCooldown = 5;
           }
         }
@@ -1651,6 +1865,7 @@ class Game {
     let phaseText = 'MENU';
     if (this.phase === 'build') phaseText = '🔧 BUILD PHASE';
     else if (this.phase === 'combat') phaseText = '⚔️ COMBAT';
+    else if (this.phase === 'relic') phaseText = '🃏 RELIC DRAFT';
     document.getElementById('phaseText').textContent = phaseText;
     document.getElementById('waveText').textContent = 'Wave ' + this.wave;
     
@@ -1663,7 +1878,7 @@ class Game {
     }
     
     let modeText = '';
-    if (this.mode === 'single') modeText = 'Single Player';
+    if (this.mode === 'single') modeText = `Single Player • Relics: ${this.rogue.relics.length}`;
     else if (this.mode === 'sandbox') modeText = 'Sandbox';
     else if (this.mode === 'local') modeText = `Local (${this.currentPlayer.toUpperCase()})`;
     else if (this.mode === 'online') modeText = 'Online';
@@ -1680,7 +1895,10 @@ class Game {
     for (const t of TOWER_LIST) {
       const btn = document.getElementById('tbtn-' + t.id);
       if (btn) {
-        btn.classList.toggle('disabled', credits < t.cost);
+        const cost = this.getTowerCost(t, player);
+        const costEl = btn.querySelector('.tcost');
+        if (costEl) costEl.textContent = '$' + cost;
+        btn.classList.toggle('disabled', credits < cost);
       }
     }
     
