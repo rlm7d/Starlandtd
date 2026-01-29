@@ -454,6 +454,10 @@ class Game {
     
     // IDs
     this.nextId = 1;
+    this.ai = {
+      buildCooldown: 0,
+      upgradeCooldown: 0
+    };
     
     // Setup
     this.resize();
@@ -1469,6 +1473,65 @@ class Game {
   }
   
   // ============ AI ============
+  getPathPoints(board) {
+    const path = board.pathCache || this.findPath(board, board.spawn, board.exit, null);
+    if (!path) return [];
+    return path.map((p, index) => ({ x: p.x, y: p.y, index }));
+  }
+  
+  scoreTowerPlacement(board, type, gx, gy, pathPoints) {
+    const cx = gx * CFG.CELL + CFG.CELL / 2;
+    const cy = gy * CFG.CELL + CFG.CELL / 2;
+    const pathLen = Math.max(1, pathPoints.length - 1);
+    let weightedCoverage = 0;
+    let minDist = Infinity;
+    let nearestIndex = 0;
+    
+    for (const point of pathPoints) {
+      const dist = Math.hypot(cx - point.x, cy - point.y);
+      if (dist < minDist) {
+        minDist = dist;
+        nearestIndex = point.index;
+      }
+      if (dist <= type.range) {
+        const progress = point.index / pathLen;
+        weightedCoverage += 1 + progress * 0.6;
+      }
+    }
+    
+    if (weightedCoverage === 0) return -Infinity;
+    
+    let score = weightedCoverage * type.dmg;
+    if (type.slow) score *= 1.2;
+    if (type.chain) score *= 1.1;
+    if (type.aoe) score *= 1.05;
+    
+    const distancePenalty = Math.min(1, minDist / (type.range * 1.2));
+    score *= 1 - distancePenalty * 0.35;
+    
+    let nearby = 0;
+    for (const tower of board.towers) {
+      const distCells = Math.hypot(tower.gx - gx, tower.gy - gy);
+      if (distCells < 2) nearby++;
+    }
+    score *= 1 - Math.min(0.5, nearby * 0.15);
+    score += (nearestIndex / pathLen) * 12;
+    return score;
+  }
+  
+  scoreTowerForUpgrade(tower, pathPoints) {
+    const pathLen = Math.max(1, pathPoints.length - 1);
+    let coverage = 0;
+    for (const point of pathPoints) {
+      const dist = Math.hypot(tower.x - point.x, tower.y - point.y);
+      if (dist <= tower.range) {
+        const progress = point.index / pathLen;
+        coverage += 1 + progress * 0.6;
+      }
+    }
+    return coverage * tower.damage + (tower.level * 10);
+  }
+  
   updateAI() {
     if (this.tick % 20 !== 0) return;
     
@@ -1476,53 +1539,87 @@ class Game {
     const credits = this.players.red.credits;
     
     if (this.phase === 'build') {
-      // Try to place towers
+      if (this.ai.buildCooldown > 0) this.ai.buildCooldown--;
+      if (this.ai.upgradeCooldown > 0) this.ai.upgradeCooldown--;
+      
+      // Try to place towers intelligently near the path
       const affordable = TOWER_LIST.filter(t => t.cost <= credits);
-      if (affordable.length > 0 && Math.random() < 0.4) {
-        const type = affordable[Math.floor(Math.random() * affordable.length)];
+      if (affordable.length > 0 && this.ai.buildCooldown === 0) {
+        const pathPoints = this.getPathPoints(board);
+        const maxRange = Math.max(...affordable.map(t => t.range));
+        let best = { score: -Infinity, type: null, gx: 0, gy: 0 };
         
-        for (let tries = 0; tries < 30; tries++) {
-          const x = 1 + Math.floor(Math.random() * (CFG.BOARD_W - 2));
-          const y = 1 + Math.floor(Math.random() * (CFG.BOARD_H - 2));
-          
-          if (board.grid[y][x] === 0) {
+        for (let y = 1; y < CFG.BOARD_H - 1; y++) {
+          for (let x = 1; x < CFG.BOARD_W - 1; x++) {
+            if (board.grid[y][x] !== 0) continue;
+            const cx = x * CFG.CELL + CFG.CELL / 2;
+            const cy = y * CFG.CELL + CFG.CELL / 2;
+            let minDist = Infinity;
+            for (const point of pathPoints) {
+              const dist = Math.hypot(cx - point.x, cy - point.y);
+              if (dist < minDist) minDist = dist;
+            }
+            if (minDist > maxRange * 1.2) continue;
+            
             const path = this.findPath(board, board.spawn, board.exit, { x, y });
-            if (path) {
-              this.players.red.credits -= type.cost;
-              board.grid[y][x] = 1;
-              board.towers.push({
-                id: this.nextId++,
-                type,
-                gx: x, gy: y,
-                x: x * CFG.CELL + CFG.CELL / 2,
-                y: y * CFG.CELL + CFG.CELL / 2,
-                damage: type.dmg,
-                range: type.range,
-                cooldown: 0,
-                level: 1,
-                totalCost: type.cost,
-                owner: 'red',
-                angle: 0,
-                targetId: null
-              });
-              this.calcPath(board);
-              break;
+            if (!path) continue;
+            
+            for (const type of affordable) {
+              if (minDist > type.range * 1.2) continue;
+              const score = this.scoreTowerPlacement(board, type, x, y, pathPoints);
+              if (score > best.score) {
+                best = { score, type, gx: x, gy: y };
+              }
             }
           }
         }
+        
+        if (best.type) {
+          this.players.red.credits -= best.type.cost;
+          board.grid[best.gy][best.gx] = 1;
+          board.towers.push({
+            id: this.nextId++,
+            type: best.type,
+            gx: best.gx,
+            gy: best.gy,
+            x: best.gx * CFG.CELL + CFG.CELL / 2,
+            y: best.gy * CFG.CELL + CFG.CELL / 2,
+            damage: best.type.dmg,
+            range: best.type.range,
+            cooldown: 0,
+            level: 1,
+            totalCost: best.type.cost,
+            owner: 'red',
+            angle: 0,
+            targetId: null
+          });
+          this.calcPath(board);
+          this.ai.buildCooldown = 4;
+        }
       }
       
-      // Try to upgrade
-      if (board.towers.length > 0 && Math.random() < 0.3) {
-        const tower = board.towers[Math.floor(Math.random() * board.towers.length)];
-        if (tower.level < CFG.MAX_LEVEL) {
-          const cost = this.getUpgradeCost(tower);
+      // Try to upgrade the most valuable tower
+      if (board.towers.length > 0 && this.ai.upgradeCooldown === 0) {
+        const pathPoints = this.getPathPoints(board);
+        let bestTower = null;
+        let bestScore = -Infinity;
+        for (const tower of board.towers) {
+          if (tower.level >= CFG.MAX_LEVEL) continue;
+          const score = this.scoreTowerForUpgrade(tower, pathPoints);
+          if (score > bestScore) {
+            bestScore = score;
+            bestTower = tower;
+          }
+        }
+        if (bestTower) {
+          const cost = this.getUpgradeCost(bestTower);
           if (this.players.red.credits >= cost) {
             this.players.red.credits -= cost;
-            tower.level++;
-            tower.damage = Math.floor(tower.damage * 1.5);
-            tower.range = Math.floor(tower.range * 1.1);
-            tower.totalCost += cost;
+            bestTower.level++;
+            bestTower.damage = Math.floor(bestTower.damage * 1.5);
+            bestTower.range = Math.floor(bestTower.range * 1.1);
+            bestTower.totalCost += cost;
+            this.ai.upgradeCooldown = 5;
           }
         }
       }
